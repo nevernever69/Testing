@@ -285,6 +285,8 @@ class AdvanceGameRunner:
         """Get game-specific prompt"""
         if self.game_type == "tennis":
             return "You are an expert Tennis player controlling the RED PLAYER."
+        elif self.game_type == "pong":
+            return "You are an expert Pong player controlling the GREEN PADDLE."
         else:
             return "You are an expert game player analyzing a game frame."
 
@@ -303,6 +305,10 @@ class AdvanceGameRunner:
             game_intro = """You are an expert Tennis player controlling the RED PLAYER.
 
 IMPORTANT: You are controlling the RED PLAYER."""
+        elif self.game_type == "pong":
+            game_intro = """You are an expert Pong player controlling the GREEN PADDLE.
+
+IMPORTANT: You are controlling the GREEN PADDLE."""
         else:
             game_intro = "You are an expert game player analyzing a game frame."
 
@@ -351,14 +357,9 @@ Detected objects with coordinates and positions:
         if self.game_type == "tennis":
             strategy_section = """
 
-IMPORTANT: Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
 
 As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
-
-Consider:
-- Object positions and their relationships
-- Movement patterns and game dynamics
-- Strategic positioning for optimal gameplay
 
 Return ONLY JSON:
 {
@@ -366,16 +367,25 @@ Return ONLY JSON:
     "action": integer_action_code
 }
 """
+        elif self.game_type == "pong":
+            strategy_section = """
+
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+
+As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis focusing on the green paddle",
+    "action": integer_action_code
+}
+"""
         else:
             strategy_section = """
 
-IMPORTANT:Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight
-As an expert player, analyze the scene and choose the optimal action.
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
 
-Consider:
-- Object positions and their relationships
-- Movement patterns and game dynamics
-- Strategic positioning for optimal gameplay
+As an expert player, analyze the scene and choose the optimal action.
 
 Return ONLY JSON:
 {

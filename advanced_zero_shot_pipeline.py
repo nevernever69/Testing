@@ -317,8 +317,6 @@ Return ONLY valid JSON in the following format:
 
         prompt = f"""You are an expert game player analyzing a game frame.
 
-IMPORTANT: Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight.
-
 Game controls:
 {controls_text}
 Current frame analysis:
@@ -334,6 +332,11 @@ Detected objects with coordinates and positions:
             label = obj.get('label', 'unknown_object')
             prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
 
+        prompt += """
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+
+"""
+
         # Add last 4 reasoning and actions for better decision making
         if self.conversation_history:
             prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
@@ -344,12 +347,6 @@ Detected objects with coordinates and positions:
         prompt += """
 
 As an expert player, analyze the scene and choose the optimal action.
-
-Consider:
-- Object positions and their relationships
-- Movement patterns and game dynamics
-- Strategic positioning for optimal gameplay
-- Learn from previous reasoning and actions to make better decisions
 
 Return ONLY JSON:
 {
@@ -366,11 +363,16 @@ Return ONLY JSON:
         # Get action controls text
         controls_text = "\n".join([f"- Action {k}: {v}" for k, v in game_controls.items()])
 
-        prompt = f"""You are an expert {game_name} player analyzing a game frame to choose the next action.\n\nIMPORTANT: Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight.\n\nYour task is to synthesize all available information: the visual frame, the symbolic object data, your recent memory, and the current strategic plan to make the optimal move.\n\nGame Controls:\n{controls_text}\n\nSymbolic State (for reference):\n- Total objects detected: {symbolic_state.get("total_objects", 0)}\n"""
+        prompt = f"""You are an expert {game_name} player analyzing a game frame to choose the next action.\n\nYour task is to synthesize all available information: the visual frame, the symbolic object data, your recent memory, and the current strategic plan to make the optimal move.\n\nGame Controls:\n{controls_text}\n\nSymbolic State (for reference):\n- Total objects detected: {symbolic_state.get("total_objects", 0)}\n"""
 
         # Add object positions
         for obj in symbolic_state.get("objects", []):
             prompt += f"- Object '{obj['label']}': coordinates at x={obj['x']}, y={obj['y']}\n"
+
+        prompt += """
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+
+"""
 
         # Add conversation history if available (changed to last 4 interactions)
         if self.conversation_history:
@@ -714,8 +716,6 @@ class TennisAdvancedDetector(AdvancedSymbolicDetector):
 
         prompt = f"""You are an expert Tennis player controlling the RED PLAYER analyzing a game frame.
 
-IMPORTANT: Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight.
-
 Game controls:
 {controls_text}
 Current frame analysis:
@@ -731,6 +731,11 @@ Detected objects with coordinates and positions:
             label = obj.get('label', 'unknown_object')
             prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
 
+        prompt += """
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+
+"""
+
         # Add last 4 reasoning and actions for better decision making
         if self.conversation_history:
             prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
@@ -741,13 +746,6 @@ Detected objects with coordinates and positions:
         prompt += """
 
 As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
-
-Consider:
-- Object positions and their relationships
-- Movement patterns and game dynamics
-- Strategic positioning for optimal gameplay
-- Learn from previous reasoning and actions to make better decisions
-- Focus on controlling the RED PLAYER effectively
 
 Return ONLY JSON:
 {
@@ -842,8 +840,126 @@ class PongAdvancedDetector(AdvancedSymbolicDetector):
             5: "LEFTFIRE (combination of left + fire)"
         }
 
+    def generate_pong_action_prompt(self, symbolic_state: Dict, game_name: str, game_controls: Dict) -> str:
+        """
+        Generate Pong-specific action prompt with GREEN PADDLE focus and last 4 reasoning/actions
+        """
+        # Build controls text
+        controls_text = ""
+        for action_num, description in game_controls.items():
+            controls_text += f"- Action {action_num}: {description}\n"
+
+        prompt = f"""You are an expert Pong player controlling the GREEN PADDLE analyzing a game frame.
+
+Game controls:
+{controls_text}
+Current frame analysis:
+- Total objects detected: {symbolic_state.get("total_objects", 0)}
+
+Detected objects with coordinates and positions:
+"""
+
+        # Add object positions
+        for obj in symbolic_state.get("objects", []):
+            x = obj.get('x', 'unknown')
+            y = obj.get('y', 'unknown')
+            label = obj.get('label', 'unknown_object')
+            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
+
+        prompt += """
+IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+
+"""
+
+        # Add last 4 reasoning and actions for better decision making
+        if self.conversation_history:
+            prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
+            for i, interaction in enumerate(self.conversation_history[-4:]):
+                prompt += f"- Previous reasoning {i+1}: {interaction['reasoning']}\n"
+                prompt += f"  Action taken: {interaction['action']}\n"
+
+        prompt += """
+
+As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis focusing on the GREEN PADDLE with positional awareness and learning from history",
+    "action": integer_action_code
+}
+"""
+        return prompt
+
     def process_single_frame(self, image_path: str, output_folder: str) -> Dict:
-        return super().process_single_frame(image_path, output_folder, self.game_name, self.game_controls)
+        """
+        Process a single frame with Pong-specific GREEN PADDLE prompt
+        """
+        os.makedirs(output_folder, exist_ok=True)
+
+        self.prompts_dir = os.path.join(output_folder, "prompts")
+        os.makedirs(self.prompts_dir, exist_ok=True)
+
+        print(f"Processing frame: {os.path.basename(image_path)}")
+
+        # Step 1: Scale image
+        scaled_image_path = os.path.join(output_folder, "scaled_frame.jpg")
+        self.scale_image(image_path, scaled_image_path)
+        print("Step 1: Image scaled to 1280x720")
+
+        # Step 2: Detect objects for Pong
+        detections = self.detect_objects(scaled_image_path, self.game_name)
+        if "error" in detections:
+            print(f"Object detection failed: {detections['error']}")
+            return detections
+        if not detections.get("objects"):
+            print("No objects detected - creating empty symbolic state")
+            detections = {"objects": []}
+        else:
+            print(f"Detected {len(detections['objects'])} objects")
+
+        # Step 3: Draw bounding boxes
+        annotated_image_path = os.path.join(output_folder, "annotated_frame.jpg")
+        if detections.get("objects"):
+            self.draw_bounding_boxes(scaled_image_path, detections, annotated_image_path)
+            print("Step 3: Bounding boxes drawn")
+        else:
+            # Copy original if no objects to annotate
+            import shutil
+            shutil.copy2(scaled_image_path, annotated_image_path)
+            print("Step 3: No objects to annotate, copied original frame")
+
+        # Step 4: Generate symbolic state
+        print("Step 4: Generating symbolic state...")
+        symbolic_state = self.generate_symbolic_state(detections)
+
+        # Step 5: Generate Pong-specific action prompt with GREEN PADDLE focus
+        print("Step 5: Generating Pong action prompt with GREEN PADDLE...")
+        action_prompt_text = self.generate_pong_action_prompt(symbolic_state, self.game_name, self.game_controls)
+
+        # Step 6: Decide next action (multi-modal)
+        print("Step 6: Deciding action...")
+        action_decision = self.decide_next_action(action_prompt_text, scaled_image_path)
+        print(f"Action decided: {action_decision['action']} ({action_decision['reasoning'][:100]}...)")
+
+        # Step 7: Update memory with this decision for future reference
+        self.update_memory(action_decision['reasoning'], action_decision['action'])
+
+        # Save simplified results
+        results = {
+            "identified_game": self.game_name,
+            "symbolic_state": symbolic_state,
+            "action_decision": action_decision,
+            "actual_prompt_used": action_prompt_text,
+            "scaled_image_path": scaled_image_path,
+            "annotated_image_path": annotated_image_path
+        }
+
+        results_file = os.path.join(output_folder, "analysis.json")
+        with open(results_file, 'w') as f:
+            json.dump(results, f, indent=2)
+
+        print(f"Results saved to: {results_file}")
+        return results
 
 
 class AssaultAdvancedDetector(AdvancedSymbolicDetector):
