@@ -1,3 +1,6 @@
-*.txt
-experiments/
 __pycache__/
+*.txt
+Tennis_bedrock_symbolic_only/
+experiments/
+Tennis_bedrock_symbolic_only_1/
+

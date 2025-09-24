@@ -13,7 +13,10 @@ from advanced_zero_shot_pipeline import (
     FroggerAdvancedDetector,
     SpaceInvadersAdvancedDetector,
     PacmanAdvancedDetector,
-    MsPacmanAdvancedDetector
+    MsPacmanAdvancedDetector,
+    PongAdvancedDetector,
+    TennisAdvancedDetector,
+    AssaultAdvancedDetector
 )
 import argparse
 import tempfile
@@ -24,7 +27,7 @@ import logging
 class AdvanceGameRunner:
     def __init__(self, env_name, provider, game_type, output_dir="./experiments/", prompt=None, model_id=None,
                  openrouter_api_key=None, detection_model="anthropic/claude-sonnet-4",
-                 num_frames=400, aws_region="us-east-1"):
+                 num_frames=600, aws_region="us-east-1"):
         self.provider = provider.lower()  # 'openai', 'gemini', 'claude', 'bedrock' or 'rand'
         self.sys_prompt = prompt or ""
         self.env_name = env_name
@@ -169,7 +172,9 @@ class AdvanceGameRunner:
             "space_invaders": 30,
             "pacman": 40,
             "mspacman": 96,
-            "pong": 15
+            "pong": 15,
+            "tennis": 15,
+            "assault": 30
         }
         return skip_frames.get(self.game_type, 30)
 
@@ -180,7 +185,10 @@ class AdvanceGameRunner:
             "frogger": FroggerAdvancedDetector,
             "space_invaders": SpaceInvadersAdvancedDetector,
             "pacman": PacmanAdvancedDetector,
-            "mspacman": MsPacmanAdvancedDetector
+            "mspacman": MsPacmanAdvancedDetector,
+            "pong": PongAdvancedDetector,
+            "tennis": TennisAdvancedDetector,
+            "assault": AssaultAdvancedDetector
         }
 
         detector_class = detectors.get(self.game_type)
@@ -245,6 +253,23 @@ class AdvanceGameRunner:
                 3: "LEFT (move left or left action)",
                 4: "RIGHTFIRE (combination of right + fire)",
                 5: "LEFTFIRE (combination of left + fire)"
+            },
+            "tennis": {
+                0: "NOOP (do nothing)",
+                1: "FIRE (hit/serve ball)",
+                2: "UP (move toward net/forward)",
+                3: "RIGHT (move right)",
+                4: "LEFT (move left)",
+                5: "DOWN (move toward baseline/backward)"
+            },
+            "assault": {
+                0: "NOOP (do nothing)",
+                1: "FIRE (shoot)",
+                2: "UP (move up)",
+                3: "RIGHT (move right)",
+                4: "LEFT (move left)",
+                5: "RIGHTFIRE (move right and shoot)",
+                6: "LEFTFIRE (move left and shoot)"
             }
         }
         return controls.get(self.game_type, {
@@ -257,11 +282,14 @@ class AdvanceGameRunner:
         })
 
     def _get_game_prompt(self):
-        """Get generic prompt that works for all games"""
-        return "You are an expert game player analyzing a game frame."
+        """Get game-specific prompt"""
+        if self.game_type == "tennis":
+            return "You are an expert Tennis player controlling the RED PLAYER."
+        else:
+            return "You are an expert game player analyzing a game frame."
 
     def _create_enhanced_prompt(self, symbolic_state):
-        """Create enhanced prompt with symbolic information using generic format"""
+        """Create enhanced prompt with symbolic information using game-specific format"""
         # Get game controls
         game_controls = self._get_game_controls()
 
@@ -270,8 +298,16 @@ class AdvanceGameRunner:
         for action_num, description in game_controls.items():
             controls_text += f"- Action {action_num}: {description}\n"
 
+        # Game-specific introduction
+        if self.game_type == "tennis":
+            game_intro = """You are an expert Tennis player controlling the RED PLAYER.
+
+IMPORTANT: You are controlling the RED PLAYER."""
+        else:
+            game_intro = "You are an expert game player analyzing a game frame."
+
         # Start building the prompt
-        prompt = """You are an expert game player analyzing a game frame.
+        prompt = """{game_intro}
 
 Game controls:
 {controls_text}
@@ -280,6 +316,7 @@ Current frame analysis:
 
 Detected objects with coordinates and positions:
 """.format(
+            game_intro=game_intro,
             controls_text=controls_text,
             total_objects=symbolic_state.get("total_objects", 0) if symbolic_state else 0
         )
@@ -310,8 +347,29 @@ Detected objects with coordinates and positions:
                                 else:
                                     prompt += f"- Object '{obj_label}': positioned at coordinates x={x}, y={y}\n"
 
-        prompt += """
+        # Add game-specific ending with visual focus instruction
+        if self.game_type == "tennis":
+            strategy_section = """
 
+IMPORTANT: Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight
+
+As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
+
+Consider:
+- Object positions and their relationships
+- Movement patterns and game dynamics
+- Strategic positioning for optimal gameplay
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis focusing on the red player",
+    "action": integer_action_code
+}
+"""
+        else:
+            strategy_section = """
+
+IMPORTANT:Prioritize understanding the visual frame for spatial and gameplay context, while drawing on symbolic information when it provides useful complementary insight
 As an expert player, analyze the scene and choose the optimal action.
 
 Consider:
@@ -325,15 +383,31 @@ Return ONLY JSON:
     "action": integer_action_code
 }
 """
+
+        prompt += strategy_section
         return prompt
 
     def save_states(self, rewards, action):
-        state = self.env.unwrapped.ale.cloneState()
-        rand_state = getattr(self.env.unwrapped, 'np_random', self.env.unwrapped.np_random)
-        self.states = getattr(self, 'states', [])
-        self.states.append((state, rand_state, rewards, self.steps_taken, action))
-        with open(os.path.join(self.new_dir, f"env_{self.temp_env_name[:-3]}_state.pkl"), "wb") as f:
-            pickle.dump(self.states, f)
+        # Only save ALE states for ALE environments
+        if hasattr(self.env.unwrapped, 'ale'):
+            state = self.env.unwrapped.ale.cloneState()
+            rand_state = getattr(self.env.unwrapped, 'np_random', self.env.unwrapped.np_random)
+            self.states = getattr(self, 'states', [])
+            self.states.append((state, rand_state, rewards, self.steps_taken, action))
+            with open(os.path.join(self.new_dir, f"env_{self.temp_env_name[:-3]}_state.pkl"), "wb") as f:
+                pickle.dump(self.states, f)
+        else:
+            # For non-ALE environments like FlappyBird, just save basic info
+            self.states = getattr(self, 'states', [])
+            state_info = {
+                'rewards': rewards,
+                'steps': self.steps_taken,
+                'action': action,
+                'game_type': self.game_type
+            }
+            self.states.append(state_info)
+            with open(os.path.join(self.new_dir, f"env_{self.temp_env_name[:-3]}_state.pkl"), "wb") as f:
+                pickle.dump(self.states, f)
 
     def save_video_segment(self, frames, checkpoint_name):
         """Save a video segment from a list of frames"""
@@ -393,12 +467,12 @@ Return ONLY JSON:
 
         # Save response with additional metadata
         response_data = {
-            "step": step_number,
-            "action": action,
+            "step": int(step_number),
+            "action": int(action),
             "reasoning": reasoning,
             "analysis_type": "symbolic_detection",
             "timestamp": datetime.now().isoformat(),
-            "cumulative_reward": self.rewards,
+            "cumulative_reward": float(self.rewards),
             "frame_path": frame_path
         }
 
@@ -451,8 +525,8 @@ Return ONLY JSON:
             # Extract symbolic state
             symbolic_state = results.get('symbolic_state', {})
 
-            # Create enhanced prompt with symbolic information
-            enhanced_prompt = self._create_enhanced_prompt(symbolic_state)
+            # Get the actual prompt that was sent to the API
+            enhanced_prompt = results.get('actual_prompt_used', self._create_enhanced_prompt(symbolic_state))
 
             # Extract action and reasoning from results
             action_decision = results.get('action_decision', {})
@@ -599,7 +673,7 @@ Return ONLY JSON:
 def main():
     parser = argparse.ArgumentParser(description="Run Atari Games with Symbolic Detection Only")
     parser.add_argument("--game", type=str, default="ALE/Breakout-v5", help="Game name")
-    parser.add_argument("--game_type", type=str, choices=["breakout", "frogger", "space_invaders", "pacman", "mspacman", "pong"],
+    parser.add_argument("--game_type", type=str, choices=["breakout", "frogger", "space_invaders", "pacman", "mspacman", "pong", "tennis", "assault"],
                         required=True, help="Game type for pipeline")
     parser.add_argument("--provider", type=str, required=True, help="Model provider (openai, gemini, claude, openrouter, bedrock)")
     parser.add_argument("--model_name", type=str, required=True, help="Specific model name")
@@ -608,7 +682,7 @@ def main():
                         help="Path to OpenRouter API key file")
     parser.add_argument("--detection_model", default="anthropic/claude-sonnet-4",
                         help="Model for symbolic detection")
-    parser.add_argument("--num_frames", type=int, default=400, help="Number of frames to run (default: 400)")
+    parser.add_argument("--num_frames", type=int, default=600, help="Number of frames to run (default: 400)")
     parser.add_argument("--aws_region", type=str, default="us-east-1", help="AWS region for Bedrock (default: us-east-1)")
 
     args = parser.parse_args()
