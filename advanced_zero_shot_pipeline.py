@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 class AdvancedSymbolicDetector:
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
         """
         Initialize the Advanced Symbolic Detector with CoT, Planning, and Memory modules
         """
@@ -24,6 +24,7 @@ class AdvancedSymbolicDetector:
         self.prompts_dir = None  # Will be set when processing frames
         self.conversation_history = []  # For last 4 reasoning and actions
         self.detection_mode = detection_mode  # "specific" or "generic"
+        self.disable_history = disable_history  # Flag to disable history mechanism
         
         # Initialize Bedrock client if using Bedrock
         if self.provider == 'bedrock':
@@ -333,12 +334,12 @@ Detected objects with coordinates and positions:
             prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
 
         prompt += """
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 """
 
-        # Add last 4 reasoning and actions for better decision making
-        if self.conversation_history:
+        # Add last 4 reasoning and actions for better decision making (only if history is not disabled)
+        if not self.disable_history and self.conversation_history:
             prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
             for i, interaction in enumerate(self.conversation_history[-4:]):
                 prompt += f"- Previous reasoning {i+1}: {interaction['reasoning']}\n"
@@ -370,12 +371,12 @@ Return ONLY JSON:
             prompt += f"- Object '{obj['label']}': coordinates at x={obj['x']}, y={obj['y']}\n"
 
         prompt += """
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 """
 
-        # Add conversation history if available (changed to last 4 interactions)
-        if self.conversation_history:
+        # Add conversation history if available (changed to last 4 interactions) (only if history is not disabled)
+        if not self.disable_history and self.conversation_history:
             prompt += f"""\nPrevious 4 Reasoning and Actions (for decision context):\n"""
             for i, interaction in enumerate(self.conversation_history[-4:]):  # Last 4 interactions
                 prompt += f"- Decision {i+1}: {interaction['reasoning']}\n"
@@ -489,8 +490,9 @@ Return ONLY valid JSON in the following format:
         action_decision = self.decide_next_action(action_prompt_text, scaled_image_path)
         print(f"Action decided: {action_decision['action']} ({action_decision['reasoning'][:100]}...)")
 
-        # Step 7: Update memory with this decision for future reference
-        self.update_memory(action_decision['reasoning'], action_decision['action'])
+        # Step 7: Update memory with this decision for future reference (only if history is not disabled)
+        if not self.disable_history:
+            self.update_memory(action_decision['reasoning'], action_decision['action'])
 
         # Save simplified results
         results = {
@@ -605,8 +607,8 @@ Return ONLY valid JSON in the following format:
 
 # Game-specific detector classes
 class BreakoutAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Breakout"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -622,8 +624,8 @@ class BreakoutAdvancedDetector(AdvancedSymbolicDetector):
 
 
 class FroggerAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Frogger"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -638,8 +640,8 @@ class FroggerAdvancedDetector(AdvancedSymbolicDetector):
 
 
 class SpaceInvadersAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Space Invaders"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -655,8 +657,8 @@ class SpaceInvadersAdvancedDetector(AdvancedSymbolicDetector):
 
 
 class PacmanAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Pacman"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -671,8 +673,8 @@ class PacmanAdvancedDetector(AdvancedSymbolicDetector):
 
 
 class MsPacmanAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Ms. Pacman"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -693,8 +695,8 @@ class MsPacmanAdvancedDetector(AdvancedSymbolicDetector):
 
 
 class TennisAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Tennis"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -732,12 +734,12 @@ Detected objects with coordinates and positions:
             prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
 
         prompt += """
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 """
 
-        # Add last 4 reasoning and actions for better decision making
-        if self.conversation_history:
+        # Add last 4 reasoning and actions for better decision making (only if history is not disabled)
+        if not self.disable_history and self.conversation_history:
             prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
             for i, interaction in enumerate(self.conversation_history[-4:]):
                 prompt += f"- Previous reasoning {i+1}: {interaction['reasoning']}\n"
@@ -806,8 +808,9 @@ Return ONLY JSON:
         action_decision = self.decide_next_action(action_prompt_text, scaled_image_path)
         print(f"Action decided: {action_decision['action']} ({action_decision['reasoning'][:100]}...)")
 
-        # Step 7: Update memory with this decision for future reference
-        self.update_memory(action_decision['reasoning'], action_decision['action'])
+        # Step 7: Update memory with this decision for future reference (only if history is not disabled)
+        if not self.disable_history:
+            self.update_memory(action_decision['reasoning'], action_decision['action'])
 
         # Save simplified results
         results = {
@@ -828,16 +831,16 @@ Return ONLY JSON:
 
 
 class PongAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Pong"
         self.game_controls = {
             0: "NOOP (do nothing)",
-            1: "FIRE (primary action - often shoot/serve/activate)",
-            2: "RIGHT (move right or right action)",
-            3: "LEFT (move left or left action)",
-            4: "RIGHTFIRE (combination of right + fire)",
-            5: "LEFTFIRE (combination of left + fire)"
+            1: "FIRE (serve/start ball - rarely used)",
+            2: "RIGHT/UP (move paddle up)",
+            3: "LEFT/DOWN (move paddle down)",
+            4: "RIGHTFIRE/UPFIRE (move up and fire)",
+            5: "LEFTFIRE/DOWNFIRE (move down and fire)"
         }
 
     def generate_pong_action_prompt(self, symbolic_state: Dict, game_name: str, game_controls: Dict) -> str:
@@ -867,12 +870,12 @@ Detected objects with coordinates and positions:
             prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
 
         prompt += """
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 """
 
-        # Add last 4 reasoning and actions for better decision making
-        if self.conversation_history:
+        # Add last 4 reasoning and actions for better decision making (only if history is not disabled)
+        if not self.disable_history and self.conversation_history:
             prompt += f"\nLast 4 Reasoning and Actions (for context):\n"
             for i, interaction in enumerate(self.conversation_history[-4:]):
                 prompt += f"- Previous reasoning {i+1}: {interaction['reasoning']}\n"
@@ -941,8 +944,9 @@ Return ONLY JSON:
         action_decision = self.decide_next_action(action_prompt_text, scaled_image_path)
         print(f"Action decided: {action_decision['action']} ({action_decision['reasoning'][:100]}...)")
 
-        # Step 7: Update memory with this decision for future reference
-        self.update_memory(action_decision['reasoning'], action_decision['action'])
+        # Step 7: Update memory with this decision for future reference (only if history is not disabled)
+        if not self.disable_history:
+            self.update_memory(action_decision['reasoning'], action_decision['action'])
 
         # Save simplified results
         results = {
@@ -963,8 +967,8 @@ Return ONLY JSON:
 
 
 class AssaultAdvancedDetector(AdvancedSymbolicDetector):
-    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1"):
-        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region)
+    def __init__(self, openrouter_api_key: str, model_name: str = "anthropic/claude-sonnet-4", detection_mode: str = "specific", provider: str = "openrouter", aws_region: str = "us-east-1", disable_history: bool = False):
+        super().__init__(openrouter_api_key, model_name, detection_mode, provider, aws_region, disable_history)
         self.game_name = "Assault"
         self.game_controls = {
             0: "NOOP (do nothing)",
@@ -990,26 +994,28 @@ def main():
                         help="Game type")
     parser.add_argument("--detection-mode", choices=["specific", "generic"], default="specific",
                         help="Detection mode: specific (game-specific) or generic (universal)")
-    
+    parser.add_argument("--disable-history", action="store_true",
+                        help="Disable history mechanism (conversation memory)")
+
     args = parser.parse_args()
     
     # Initialize detector based on game type and detection mode
     if args.game == "breakout":
-        detector = BreakoutAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = BreakoutAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "frogger":
-        detector = FroggerAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = FroggerAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "space_invaders":
-        detector = SpaceInvadersAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = SpaceInvadersAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "pacman":
-        detector = PacmanAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = PacmanAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "mspacman":
-        detector = MsPacmanAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = MsPacmanAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "pong":
-        detector = PongAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = PongAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "tennis":
-        detector = TennisAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = TennisAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     elif args.game == "assault":
-        detector = AssaultAdvancedDetector(args.api_key, args.model, args.detection_mode)
+        detector = AssaultAdvancedDetector(args.api_key, args.model, args.detection_mode, disable_history=args.disable_history)
     else:
         raise ValueError(f"Unsupported game: {args.game}")
     

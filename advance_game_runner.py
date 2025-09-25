@@ -27,7 +27,7 @@ import logging
 class AdvanceGameRunner:
     def __init__(self, env_name, provider, game_type, output_dir="./experiments/", prompt=None, model_id=None,
                  openrouter_api_key=None, detection_model="anthropic/claude-sonnet-4",
-                 num_frames=600, aws_region="us-east-1"):
+                 num_frames=600, aws_region="us-east-1", disable_history=False):
         self.provider = provider.lower()  # 'openai', 'gemini', 'claude', 'bedrock' or 'rand'
         self.sys_prompt = prompt or ""
         self.env_name = env_name
@@ -41,6 +41,7 @@ class AdvanceGameRunner:
         self.video_frames = []  # Store all frames for cumulative checkpoint videos
         self.skip_initial_frames = self._get_skip_frames()
         self.aws_region = aws_region  # AWS region for Bedrock
+        self.disable_history = disable_history  # Flag to disable history mechanism
 
         # Results directory structure
         self.base_dir = output_dir
@@ -197,9 +198,9 @@ class AdvanceGameRunner:
             detection_mode = "specific"
             # If using Bedrock provider, pass the provider info to the detector
             if self.provider == 'bedrock':
-                return detector_class(api_key, model_name, detection_mode, provider='bedrock', aws_region=self.aws_region)
+                return detector_class(api_key, model_name, detection_mode, provider='bedrock', aws_region=self.aws_region, disable_history=self.disable_history)
             else:
-                return detector_class(api_key, model_name, detection_mode)
+                return detector_class(api_key, model_name, detection_mode, disable_history=self.disable_history)
         return None
 
     def _get_game_controls(self):
@@ -248,11 +249,11 @@ class AdvanceGameRunner:
             },
             "pong": {
                 0: "NOOP (do nothing)",
-                1: "FIRE (primary action - often shoot/serve/activate)",
-                2: "RIGHT (move right or right action)",
-                3: "LEFT (move left or left action)",
-                4: "RIGHTFIRE (combination of right + fire)",
-                5: "LEFTFIRE (combination of left + fire)"
+                1: "FIRE (serve/start ball - rarely used)",
+                2: "RIGHT/UP (move paddle up)",
+                3: "LEFT/DOWN (move paddle down)",
+                4: "RIGHTFIRE/UPFIRE (move up and fire)",
+                5: "LEFTFIRE/DOWNFIRE (move down and fire)"
             },
             "tennis": {
                 0: "NOOP (do nothing)",
@@ -357,7 +358,7 @@ Detected objects with coordinates and positions:
         if self.game_type == "tennis":
             strategy_section = """
 
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
 
@@ -370,7 +371,7 @@ Return ONLY JSON:
         elif self.game_type == "pong":
             strategy_section = """
 
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
 
@@ -383,7 +384,7 @@ Return ONLY JSON:
         else:
             strategy_section = """
 
-IMPORTANT WARNING: The symbolic information above may contain errors or be outdated. DO NOT make concrete decisions based solely on this symbolic data. ALWAYS verify with the visual frame as it is the most reliable source of information. Use the symbolic data only as a supplementary reference
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 As an expert player, analyze the scene and choose the optimal action.
 
@@ -694,6 +695,7 @@ def main():
                         help="Model for symbolic detection")
     parser.add_argument("--num_frames", type=int, default=600, help="Number of frames to run (default: 400)")
     parser.add_argument("--aws_region", type=str, default="us-east-1", help="AWS region for Bedrock (default: us-east-1)")
+    parser.add_argument("--disable_history", action="store_true", help="Disable history mechanism (conversation memory)")
 
     args = parser.parse_args()
 
@@ -719,7 +721,8 @@ def main():
         openrouter_api_key=openrouter_api_key,
         detection_model=detection_model,
         num_frames=args.num_frames,
-        aws_region=args.aws_region
+        aws_region=args.aws_region,
+        disable_history=args.disable_history
     )
 
 
