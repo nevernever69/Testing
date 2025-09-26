@@ -146,8 +146,13 @@ class AdvancedSymbolicDetector:
         """
         print(f"Step 2: Detecting objects for {game_name}...")
         base64_image = self.encode_image_to_base64(image_path)
-        
-        prompt = f"""You are an expert game frame analyzer for the game {game_name}. 
+
+        # Add game-specific instructions for better detection
+        game_specific_info = ""
+        if game_name.lower() == "breakout":
+            game_specific_info = "\n\nIMPORTANT: You are controlling the orange paddle at the bottom of the screen. Pay special attention to detecting the orange paddle which you control."
+
+        prompt = f"""You are an expert game frame analyzer for the game {game_name}.{game_specific_info}
 
 Your task is to detect ALL visible objects in the image with high precision. Detect all distinct, visible objects (like players, enemies, projectiles, items, scores). For each object, provide its label, a tight bounding box [x1, y1, x2, y2], and a confidence score.
 
