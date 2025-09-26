@@ -288,6 +288,8 @@ class AdvanceGameRunner:
             return "You are an expert Tennis player controlling the RED PLAYER."
         elif self.game_type == "pong":
             return "You are an expert Pong player controlling the GREEN PADDLE."
+        elif self.game_type == "breakout":
+            return "You are an expert Breakout player controlling the ORANGE PADDLE at the bottom."
         else:
             return "You are an expert game player analyzing a game frame."
 
@@ -310,6 +312,10 @@ IMPORTANT: You are controlling the RED PLAYER."""
             game_intro = """You are an expert Pong player controlling the GREEN PADDLE.
 
 IMPORTANT: You are controlling the GREEN PADDLE."""
+        elif self.game_type == "breakout":
+            game_intro = """You are an expert Breakout player controlling the ORANGE PADDLE at the bottom.
+
+IMPORTANT: You are controlling the ORANGE PADDLE at the bottom."""
         else:
             game_intro = "You are an expert game player analyzing a game frame."
 
@@ -378,6 +384,19 @@ As an expert Pong player controlling the GREEN PADDLE, analyze the scene and cho
 Return ONLY JSON:
 {
     "reasoning": "your expert analysis focusing on the green paddle",
+    "action": integer_action_code
+}
+"""
+        elif self.game_type == "breakout":
+            strategy_section = """
+
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
+
+As an expert Breakout player controlling the ORANGE PADDLE at the bottom, analyze the scene and choose the optimal action.
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis focusing on the orange paddle at the bottom",
     "action": integer_action_code
 }
 """
