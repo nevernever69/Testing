@@ -288,16 +288,26 @@ Return ONLY valid JSON in the following format:
                     # Convert normalized coordinates to pixel coordinates (1280x720)
                     center_x = int((coords[0] + coords[2]) / 2 * self.scaled_width)
                     center_y = int((coords[1] + coords[3]) / 2 * self.scaled_height)
+                    width = int((coords[2] - coords[0]) * self.scaled_width)
+                    height = int((coords[3] - coords[1]) * self.scaled_height)
                 else:
                     # Use pixel coordinates as-is
                     center_x = int((coords[0] + coords[2]) / 2)
                     center_y = int((coords[1] + coords[3]) / 2)
-                
+                    width = int(coords[2] - coords[0])
+                    height = int(coords[3] - coords[1])
+
+                # Calculate area
+                area = width * height
+
                 obj_info = {
                     "id": obj.get("id", f"obj_{i}"),
                     "label": obj.get("label", "unknown"),
                     "x": center_x,
                     "y": center_y,
+                    "width": width,
+                    "height": height,
+                    "area": area,
                     "bbox": coords,
                     "confidence": obj.get("confidence", 0.0),
                     "description": obj.get("description", "")
@@ -326,12 +336,14 @@ Current frame analysis:
 Detected objects with coordinates and positions:
 """
 
-        # Add object positions
+        # Add object positions with size information
         for obj in symbolic_state.get("objects", []):
             x = obj.get('x', 'unknown')
             y = obj.get('y', 'unknown')
+            width = obj.get('width', 'unknown')
+            height = obj.get('height', 'unknown')
             label = obj.get('label', 'unknown_object')
-            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
+            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
 
         prompt += """
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
@@ -348,6 +360,13 @@ IMPORTANT: Use the symbolic information when available and reliable, but priorit
         prompt += """
 
 As an expert player, analyze the scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
 
 Return ONLY JSON:
 {
@@ -366,9 +385,11 @@ Return ONLY JSON:
 
         prompt = f"""You are an expert {game_name} player analyzing a game frame to choose the next action.\n\nYour task is to synthesize all available information: the visual frame, the symbolic object data, your recent memory, and the current strategic plan to make the optimal move.\n\nGame Controls:\n{controls_text}\n\nSymbolic State (for reference):\n- Total objects detected: {symbolic_state.get("total_objects", 0)}\n"""
 
-        # Add object positions
+        # Add object positions with size information
         for obj in symbolic_state.get("objects", []):
-            prompt += f"- Object '{obj['label']}': coordinates at x={obj['x']}, y={obj['y']}\n"
+            width = obj.get('width', 'unknown')
+            height = obj.get('height', 'unknown')
+            prompt += f"- Object '{obj['label']}': coordinates at x={obj['x']}, y={obj['y']}, size {width}x{height}\n"
 
         prompt += """
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
@@ -726,12 +747,14 @@ Current frame analysis:
 Detected objects with coordinates and positions:
 """
 
-        # Add object positions
+        # Add object positions with size information
         for obj in symbolic_state.get("objects", []):
             x = obj.get('x', 'unknown')
             y = obj.get('y', 'unknown')
+            width = obj.get('width', 'unknown')
+            height = obj.get('height', 'unknown')
             label = obj.get('label', 'unknown_object')
-            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
+            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
 
         prompt += """
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
@@ -748,6 +771,13 @@ IMPORTANT: Use the symbolic information when available and reliable, but priorit
         prompt += """
 
 As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
 
 Return ONLY JSON:
 {
@@ -862,12 +892,14 @@ Current frame analysis:
 Detected objects with coordinates and positions:
 """
 
-        # Add object positions
+        # Add object positions with size information
         for obj in symbolic_state.get("objects", []):
             x = obj.get('x', 'unknown')
             y = obj.get('y', 'unknown')
+            width = obj.get('width', 'unknown')
+            height = obj.get('height', 'unknown')
             label = obj.get('label', 'unknown_object')
-            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
+            prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
 
         prompt += """
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
@@ -884,6 +916,13 @@ IMPORTANT: Use the symbolic information when available and reliable, but priorit
         prompt += """
 
 As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
 
 Return ONLY JSON:
 {

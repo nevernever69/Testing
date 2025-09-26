@@ -27,7 +27,7 @@ import logging
 class AdvanceGameRunner:
     def __init__(self, env_name, provider, game_type, output_dir="./experiments/", prompt=None, model_id=None,
                  openrouter_api_key=None, detection_model="anthropic/claude-sonnet-4",
-                 num_frames=600, aws_region="us-east-1", disable_history=False):
+                 num_frames=600, aws_region="us-east-1", disable_history=False, resume=False):
         self.provider = provider.lower()  # 'openai', 'gemini', 'claude', 'bedrock' or 'rand'
         self.sys_prompt = prompt or ""
         self.env_name = env_name
@@ -82,11 +82,16 @@ class AdvanceGameRunner:
             if self.provider in MODELS:
                 model_id = MODELS[self.provider][1]
 
-        # Skip test if already done
+        # Check if previous run exists and handle resume/skip
         state_file = os.path.join(self.new_dir, f"env_{base}_state.pkl")
+        self.resume_from_checkpoint = False
         if os.path.exists(state_file):
-            print(f"\n\nEnvironment '{env_name}' already processed—skipping.\n\n")
-            return
+            if resume:
+                print(f"\n\nFound existing state for '{env_name}' - attempting to resume...\n")
+                self.resume_from_checkpoint = True
+            else:
+                print(f"\n\nEnvironment '{env_name}' already processed—skipping. Use --resume to continue from last checkpoint.\n\n")
+                return
 
         # Build environment and video recorder
         gym.register_envs(ale_py)
@@ -120,6 +125,63 @@ class AdvanceGameRunner:
         # Log final summary
         self.logger.info(f"Game completed. Total reward: {self.rewards}, Total steps: {self.steps_taken}")
         self.logger.info("="*50 + " GAME COMPLETE " + "="*50)
+
+    def load_checkpoint_state(self):
+        """Load state from checkpoint to resume execution"""
+        try:
+            state_file = os.path.join(self.new_dir, f"env_{self.temp_env_name[:-3]}_state.pkl")
+            if os.path.exists(state_file):
+                with open(state_file, "rb") as f:
+                    self.states = pickle.load(f)
+
+                if self.states:
+                    # Get the last saved state
+                    if hasattr(self.env.unwrapped, 'ale'):
+                        # ALE environment - restore full state
+                        last_state, last_rand_state, last_rewards, last_steps, last_action = self.states[-1]
+                        self.env.unwrapped.ale.restoreState(last_state)
+                        self.env.unwrapped.np_random = last_rand_state
+                        self.rewards = last_rewards
+                        self.steps_taken = last_steps
+                    else:
+                        # Non-ALE environment - restore basic info
+                        last_state_info = self.states[-1]
+                        self.rewards = last_state_info['rewards']
+                        self.steps_taken = last_state_info['steps']
+
+                    # Load existing actions and rewards
+                    actions_file = os.path.join(self.new_dir, "actions_rewards.csv")
+                    if os.path.exists(actions_file):
+                        import csv
+                        self.action_list = []
+                        self.cum_rewards = []
+                        with open(actions_file, 'r') as f:
+                            reader = csv.reader(f)
+                            next(reader)  # Skip header
+                            for row in reader:
+                                if len(row) >= 2:
+                                    self.action_list.append(int(row[0]))
+                                    self.cum_rewards.append(float(row[1]))
+
+                    # Load existing video frames if they exist
+                    self.video_frames = []
+                    frames_dir = os.path.join(self.results_dir, "frames")
+                    if os.path.exists(frames_dir):
+                        import glob
+                        frame_files = sorted(glob.glob(os.path.join(frames_dir, "frame_*.jpg")))
+                        for frame_file in frame_files:
+                            frame = cv2.imread(frame_file)
+                            if frame is not None:
+                                self.video_frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+                    print(f"✓ Resumed from step {self.steps_taken} with reward {self.rewards}")
+                    self.logger.info(f"Successfully resumed from checkpoint: step={self.steps_taken}, reward={self.rewards}")
+                    return True
+            return False
+        except Exception as e:
+            print(f"✗ Failed to load checkpoint: {e}")
+            self.logger.error(f"Failed to load checkpoint: {e}")
+            return False
 
     def setup_logging(self):
         """Set up comprehensive logging for the game session"""
@@ -337,28 +399,34 @@ Detected objects with coordinates and positions:
         # Add object positions if symbolic_state exists
         if symbolic_state:
             if 'objects' in symbolic_state and isinstance(symbolic_state['objects'], list):
-                # New format: symbolic_state = {"objects": [{"label": "paddle", "x": 645, "y": 657}, ...]}
+                # New format: symbolic_state = {"objects": [{"label": "paddle", "x": 645, "y": 657, "width": 30, "height": 10}, ...]}
                 for obj in symbolic_state.get("objects", []):
                     x = obj.get('x', 'unknown')
                     y = obj.get('y', 'unknown')
+                    width = obj.get('width', 'unknown')
+                    height = obj.get('height', 'unknown')
                     label = obj.get('label', 'unknown_object')
-                    prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}\n"
+                    prompt += f"- Object '{label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
             else:
                 # Legacy format: process all detected objects dynamically
                 for obj_label, obj_data in symbolic_state.items():
                     if isinstance(obj_data, dict):
                         x = obj_data.get('x', 'unknown')
                         y = obj_data.get('y', 'unknown')
-                        prompt += f"- Object '{obj_label}': positioned at coordinates x={x}, y={y}\n"
+                        width = obj_data.get('width', 'unknown')
+                        height = obj_data.get('height', 'unknown')
+                        prompt += f"- Object '{obj_label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
                     elif isinstance(obj_data, list):
                         for i, instance in enumerate(obj_data):
                             if isinstance(instance, dict):
                                 x = instance.get('x', 'unknown')
                                 y = instance.get('y', 'unknown')
+                                width = instance.get('width', 'unknown')
+                                height = instance.get('height', 'unknown')
                                 if len(obj_data) > 1:
-                                    prompt += f"- Object '{obj_label} #{i+1}': positioned at coordinates x={x}, y={y}\n"
+                                    prompt += f"- Object '{obj_label} #{i+1}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
                                 else:
-                                    prompt += f"- Object '{obj_label}': positioned at coordinates x={x}, y={y}\n"
+                                    prompt += f"- Object '{obj_label}': positioned at coordinates x={x}, y={y}, size {width}x{height}\n"
 
         # Add game-specific ending with visual focus instruction
         if self.game_type == "tennis":
@@ -367,6 +435,13 @@ Detected objects with coordinates and positions:
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 As an expert Tennis player controlling the RED PLAYER, analyze the scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
 
 Return ONLY JSON:
 {
@@ -381,6 +456,13 @@ IMPORTANT: Use the symbolic information when available and reliable, but priorit
 
 As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
 
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
+
 Return ONLY JSON:
 {
     "reasoning": "your expert analysis focusing on the green paddle",
@@ -394,6 +476,13 @@ IMPORTANT: Use the symbolic information when available and reliable, but priorit
 
 As an expert Breakout player controlling the ORANGE PADDLE at the bottom, analyze the scene and choose the optimal action.
 
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
+
 Return ONLY JSON:
 {
     "reasoning": "your expert analysis focusing on the orange paddle at the bottom",
@@ -406,6 +495,13 @@ Return ONLY JSON:
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
 As an expert player, analyze the scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Identify the positions of all key objects
+3. Predict the trajectory or movement patterns
+4. Consider your strategic options
+5. Choose the optimal action
 
 Return ONLY JSON:
 {
@@ -561,6 +657,23 @@ Return ONLY JSON:
             # Extract action and reasoning from results
             action_decision = results.get('action_decision', {})
             action = action_decision.get('action', 0)
+
+            # Validate action is within valid range for the game
+            game_action_ranges = {
+                'breakout': 5,
+                'frogger': 4,
+                'space_invaders': 5,
+                'pacman': 4,
+                'mspacman': 4,
+                'pong': 5,
+                'tennis': 5,
+                'assault': 5
+            }
+            max_action = game_action_ranges.get(self.game_type, 5)
+            if action < 0 or action > max_action:
+                self.logger.warning(f"Invalid action {action} for game {self.game_type}, clipping to 0 (NOOP)")
+                action = 0  # Default to no-op
+
             reasoning = action_decision.get('reasoning', 'No reasoning provided')
 
             # Log symbolic detection results
@@ -575,8 +688,21 @@ Return ONLY JSON:
 
     def rand_rollout(self):
         obs, info = self.env.reset()
-        self.save_states(self.rewards, 0)
-        pbar = tqdm(total=self.num_timesteps, desc=f"Random Rollout ({self.temp_env_name})", unit="step")
+
+        # Handle resume from checkpoint
+        if self.resume_from_checkpoint:
+            if self.load_checkpoint_state():
+                self.logger.info("Successfully resumed from checkpoint")
+                # Don't reset environment state since we've restored it
+                pass
+            else:
+                self.logger.warning("Failed to resume from checkpoint, starting fresh")
+                self.resume_from_checkpoint = False
+                self.save_states(self.rewards, 0)
+        else:
+            self.save_states(self.rewards, 0)
+
+        pbar = tqdm(total=self.num_timesteps, initial=self.steps_taken, desc=f"Random Rollout ({self.temp_env_name})", unit="step")
 
         for step in range(self.num_timesteps - self.steps_taken):
             obs = cv2.resize(obs, (512, 512))
@@ -617,18 +743,34 @@ Return ONLY JSON:
         self.logger.info(f"Skip first {self.skip_initial_frames} frames, then process every frame")
 
         obs, info = self.env.reset()
-        self.save_states(self.rewards, 0)
-        pbar = tqdm(total=self.num_timesteps, desc=f"{self.display_name} {self.game_type.title()} Symbolic ({self.temp_env_name})", unit="step")
+
+        # Handle resume from checkpoint
+        if self.resume_from_checkpoint:
+            if self.load_checkpoint_state():
+                self.logger.info("Successfully resumed from checkpoint")
+                # Don't reset environment state since we've restored it
+                pass
+            else:
+                self.logger.warning("Failed to resume from checkpoint, starting fresh")
+                self.resume_from_checkpoint = False
+                self.save_states(self.rewards, 0)
+        else:
+            self.save_states(self.rewards, 0)
+
+        pbar = tqdm(total=self.num_timesteps, initial=self.steps_taken, desc=f"{self.display_name} {self.game_type.title()} Symbolic ({self.temp_env_name})", unit="step")
 
         for step in range(self.num_timesteps - self.steps_taken):
+            # Calculate current absolute step for proper skipping logic
+            current_step = self.steps_taken + step
+
             # Skip the initial frames for decision making, then process every frame
-            if step < self.skip_initial_frames:
+            if current_step < self.skip_initial_frames:
                 # No-op for initial frames
                 action = 0
-                reasoning = f"NOOP for initial frame {step} (skipping first {self.skip_initial_frames})"
+                reasoning = f"NOOP for initial frame {current_step} (skipping first {self.skip_initial_frames})"
                 symbolic_state = None
                 enhanced_prompt = None
-                self.logger.debug(f"Step {step}: NOOP (skip initial frame)")
+                self.logger.debug(f"Step {current_step}: NOOP (skip initial frame)")
             else:
                 # Get current frame for processing
                 frame = self.env.render()
@@ -640,12 +782,12 @@ Return ONLY JSON:
 
                     try:
                         # Get action from symbolic detection pipeline
-                        self.logger.debug(f"Step {step}: Processing frame with symbolic detection...")
+                        self.logger.debug(f"Step {current_step}: Processing frame with symbolic detection...")
                         action, reasoning, symbolic_state, enhanced_prompt = self.get_action_from_symbolic(temp_frame_path, self.steps_taken)
 
                         # Log the results
-                        self.logger.debug(f"Step {step}: Symbolic detection returned action={action}")
-                        self.logger.debug(f"Step {step}: Enhanced prompt length: {len(enhanced_prompt) if enhanced_prompt else 0}")
+                        self.logger.debug(f"Step {current_step}: Symbolic detection returned action={action}")
+                        self.logger.debug(f"Step {current_step}: Enhanced prompt length: {len(enhanced_prompt) if enhanced_prompt else 0}")
 
                     finally:
                         # Clean up temp file
@@ -669,7 +811,7 @@ Return ONLY JSON:
             old_reward = self.rewards
             self.rewards += rew
             if rew != 0:
-                self.logger.info(f"Step {step}: REWARD CHANGE! +{rew} (total: {old_reward} -> {self.rewards})")
+                self.logger.info(f"Step {current_step}: REWARD CHANGE! +{rew} (total: {old_reward} -> {self.rewards})")
 
             self.cum_rewards.append(self.rewards)
 
@@ -687,7 +829,7 @@ Return ONLY JSON:
                 self.logger.info(f"Checkpoint saved at step {self.steps_taken}")
 
             if term or trunc:
-                self.logger.info(f"Step {step}: Episode ended (term={term}, trunc={trunc}), resetting environment")
+                self.logger.info(f"Step {current_step}: Episode ended (term={term}, trunc={trunc}), resetting environment")
                 obs, info = self.env.reset()
 
             self.steps_taken += 1
