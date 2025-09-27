@@ -857,6 +857,7 @@ def main():
     parser.add_argument("--num_frames", type=int, default=600, help="Number of frames to run (default: 400)")
     parser.add_argument("--aws_region", type=str, default="us-east-1", help="AWS region for Bedrock (default: us-east-1)")
     parser.add_argument("--disable_history", action="store_true", help="Disable history mechanism (conversation memory)")
+    parser.add_argument("--resume", action="store_true", help="Resume from last checkpoint instead of skipping existing runs")
 
     args = parser.parse_args()
 
@@ -883,7 +884,8 @@ def main():
         detection_model=detection_model,
         num_frames=args.num_frames,
         aws_region=args.aws_region,
-        disable_history=args.disable_history
+        disable_history=args.disable_history,
+        resume=args.resume
     )
 
 

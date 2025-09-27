@@ -2,6 +2,9 @@ import os
 import csv
 import pickle
 import json
+import base64
+import requests
+import re
 import gymnasium as gym
 import ale_py
 import cv2
@@ -67,6 +70,18 @@ class DirectFrameRunner:
                 model_id = MODELS[self.provider][1]
 
         self.model_id = model_id
+
+        # API configuration
+        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
+
+        # Initialize Bedrock client if using Bedrock
+        if self.provider == 'bedrock':
+            try:
+                from aws_model import BedrockUnifiedClient
+                self.bedrock_client = BedrockUnifiedClient(region_name=aws_region)
+            except Exception as e:
+                print(f"Warning: Failed to initialize Bedrock client: {e}")
+                self.bedrock_client = None
 
         # Skip test if already done
         state_file = os.path.join(self.new_dir, f"env_{base}_state.pkl")
@@ -263,6 +278,10 @@ IMPORTANT: You are controlling the RED PLAYER."""
             game_intro = """You are an expert Pong player controlling the GREEN PADDLE.
 
 IMPORTANT: You are controlling the GREEN PADDLE."""
+        elif self.game_type == "breakout":
+            game_intro = """You are an expert Breakout player controlling the ORANGE PADDLE at the bottom.
+
+IMPORTANT: You are controlling the ORANGE PADDLE at the bottom."""
         else:
             game_intro = "You are an expert game player analyzing a game frame."
 
@@ -274,14 +293,6 @@ Game controls:
 
 Analyze the current game frame image and choose the best action based on what you see.
 
-IMPORTANT: You must analyze the visual content of the frame directly. Look for:
-- Player position and state
-- Enemy/opponent positions
-- Ball/projectile locations and movement
-- Obstacles and game elements
-- Score and game state indicators
-- Any immediate threats or opportunities
-
 """.format(
             game_intro=game_intro,
             controls_text=controls_text
@@ -292,9 +303,15 @@ IMPORTANT: You must analyze the visual content of the frame directly. Look for:
             strategy_section = """
 As an expert Tennis player controlling the RED PLAYER, analyze the visual scene and choose the optimal action.
 
+Think step by step:
+1. Observe the current state of the game
+2. Predict the trajectory or movement patterns
+3. Consider your strategic options
+4. Choose the optimal action
+
 Return ONLY JSON:
 {
-    "reasoning": "your detailed visual analysis focusing on the red player's position, ball location, and optimal strategy",
+    "reasoning": "your expert analysis and decision rationale",
     "action": integer_action_code
 }
 """
@@ -302,9 +319,31 @@ Return ONLY JSON:
             strategy_section = """
 As an expert Pong player controlling the GREEN PADDLE, analyze the visual scene and choose the optimal action.
 
+Think step by step:
+1. Observe the current state of the game
+2. Predict the trajectory or movement patterns
+3. Consider your strategic options
+4. Choose the optimal action
+
 Return ONLY JSON:
 {
-    "reasoning": "your detailed visual analysis focusing on the green paddle position, ball location and trajectory, and optimal strategy",
+    "reasoning": "your expert analysis and decision rationale",
+    "action": integer_action_code
+}
+"""
+        elif self.game_type == "breakout":
+            strategy_section = """
+As an expert Breakout player controlling the ORANGE PADDLE at the bottom, analyze the visual scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Predict the trajectory or movement patterns
+3. Consider your strategic options
+4. Choose the optimal action
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis and decision rationale",
     "action": integer_action_code
 }
 """
@@ -312,15 +351,113 @@ Return ONLY JSON:
             strategy_section = """
 As an expert player, analyze the visual scene and choose the optimal action.
 
+Think step by step:
+1. Observe the current state of the game
+2. Predict the trajectory or movement patterns
+3. Consider your strategic options
+4. Choose the optimal action
+
 Return ONLY JSON:
 {
-    "reasoning": "your detailed visual analysis of the game state and optimal strategy",
+    "reasoning": "your expert analysis and decision rationale",
     "action": integer_action_code
 }
 """
 
         prompt += strategy_section
         return prompt
+
+    def encode_image_to_base64(self, image_path: str) -> str:
+        """Convert image to base64 string"""
+        with open(image_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+
+    def _make_api_call(self, messages: list, max_tokens: int = 1000) -> str:
+        """Make API call to OpenRouter or Bedrock"""
+        # Use Bedrock if provider is Bedrock
+        if self.provider == 'bedrock' and hasattr(self, 'bedrock_client') and self.bedrock_client:
+            try:
+                # Convert messages to Bedrock format
+                bedrock_messages = []
+                for msg in messages:
+                    content = msg["content"]
+                    if isinstance(content, str):
+                        bedrock_messages.append({
+                            "role": msg["role"],
+                            "content": [{"text": content}]
+                        })
+                    else:
+                        # Handle complex content (images, etc.)
+                        bedrock_content = []
+                        for item in content:
+                            if "text" in item:
+                                bedrock_content.append({"text": item["text"]})
+                            elif "image" in item and "source" in item["image"]:
+                                # Claude format
+                                image_data = item["image"]["source"]["data"]
+                                bedrock_content.append({
+                                    "image": {
+                                        "format": "jpeg",
+                                        "source": {"bytes": base64.b64decode(image_data)}
+                                    }
+                                })
+                            elif "image_url" in item:
+                                # OpenAI format - extract base64 data
+                                image_url = item["image_url"]["url"]
+                                if image_url.startswith("data:image"):
+                                    base64_data = image_url.split(",", 1)[1] if "," in image_url else image_url
+                                    bedrock_content.append({
+                                        "image": {
+                                            "format": "jpeg",
+                                            "source": {"bytes": base64.b64decode(base64_data)}
+                                        }
+                                    })
+                        bedrock_messages.append({
+                            "role": msg["role"],
+                            "content": bedrock_content
+                        })
+
+                # Make Bedrock API call
+                response = self.bedrock_client.chat_completion(
+                    model=self.model_id,
+                    messages=bedrock_messages,
+                    max_tokens=max_tokens,
+                    temperature=0
+                )
+
+                if 'choices' not in response or not response['choices']:
+                    return None
+
+                return response['choices'][0]['message']['content']
+            except Exception as e:
+                self.logger.error(f"Bedrock API request failed: {e}")
+                return None
+        else:
+            # Use OpenRouter (default)
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": self.model_id,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": 0
+            }
+
+            try:
+                response = requests.post(self.api_url, headers=headers, json=payload)
+                response.raise_for_status()
+                result = response.json()
+
+                if 'choices' not in result or not result['choices']:
+                    return None
+
+                return result['choices'][0]['message']['content']
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"OpenRouter API request failed: {e}")
+                return None
 
     def save_states(self, rewards, action):
         # Only save ALE states for ALE environments
@@ -444,74 +581,38 @@ Return ONLY JSON:
         self.logger.debug(f"Step {step_number}: Saved prompt information")
 
     def get_action_from_direct_frame(self, frame_path, step_number):
-        """Get action from direct frame analysis using LLM API"""
+        """Get action from direct frame analysis using internal API client"""
         try:
-            # Import the LLM client
-            from llms import get_client
-            import cv2
-            import json
-            import re
-
-            # Initialize client if not already done
-            if not hasattr(self, 'llm_client'):
-                self.llm_client = get_client(self.provider)
-
-            # Read and encode the frame
-            frame = cv2.imread(frame_path)
-            if frame is None:
-                raise ValueError(f"Could not read frame from {frame_path}")
+            # Encode the frame
+            img_b64 = self.encode_image_to_base64(frame_path)
 
             # Prepare the prompt for the LLM
             prompt = self.base_prompt
 
-            # For Bedrock, use the vision_chat method if available
-            if hasattr(self.llm_client.client, 'vision_chat'):
-                # vision_chat returns the text content directly, not a full response object
-                raw_response = self.llm_client.client.vision_chat(
-                    model=self.model_id,
-                    image_path=frame_path,
-                    text=prompt,
-                    temperature=0
-                )
-            else:
-                # For other providers, create a message with image
-                from llms import encode_image
-                img_b64 = encode_image(frame)
-
-                # Prepare messages based on provider
-                if self.provider.lower() == 'claude':
-                    messages = [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": img_b64}}
-                        ]
-                    }]
-                    response = self.llm_client.create_chat(
-                        model=self.model_id,
-                        messages=messages,
-                        temperature=0,
-                        system=prompt if hasattr(self.llm_client, 'system') else None
-                    )
-                else:
-                    # For OpenAI-style APIs
-                    messages = [
-                        {"role": "system", "content": prompt},
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": "Analyze this game frame and choose the best action."},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
-                            ]
-                        }
+            # Prepare messages based on provider
+            if self.provider.lower() == 'claude' or self.provider.lower() == 'bedrock':
+                messages = [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": img_b64}}
                     ]
-                    response = self.llm_client.create_chat(
-                        model=self.model_id,
-                        messages=messages,
-                        temperature=0
-                    )
+                }]
+            else:
+                # For OpenAI-style APIs (OpenRouter)
+                messages = [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+                    ]
+                }]
 
-                raw_response = self.llm_client.extract_response_text(response)
+            # Make API call
+            raw_response = self._make_api_call(messages, max_tokens=1000)
+
+            if not raw_response:
+                return 0, "Failed to get response from API", prompt
 
             # Parse the JSON response
             match = re.search(r"\{.*\}", raw_response, flags=re.DOTALL)
@@ -520,10 +621,23 @@ Return ONLY JSON:
                 try:
                     obj = json.loads(payload)
                     action = int(obj.get('action', 0))
-                    # Validate action is within valid range
-                    max_action = 5 if self.game_type == 'pong' else 5  # Adjust based on game
+
+                    # Validate action is within valid range based on game
+                    game_action_ranges = {
+                        'breakout': 5,
+                        'frogger': 4,
+                        'space_invaders': 5,
+                        'pacman': 4,
+                        'mspacman': 4,
+                        'pong': 5,
+                        'tennis': 5,
+                        'assault': 5
+                    }
+                    max_action = game_action_ranges.get(self.game_type, 5)
                     if action < 0 or action > max_action:
+                        self.logger.warning(f"Invalid action {action} for game {self.game_type}, clipping to 0 (NOOP)")
                         action = 0  # Default to no-op
+
                     reasoning = obj.get('reasoning', 'No reasoning provided')
 
                     self.logger.debug(f"Step {step_number}: LLM returned action={action}, reasoning={reasoning}")
