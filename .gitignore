@@ -1,4 +1,5 @@
 Breakout_bedrock_symbolic_only/
+*.zip
 Pong_bedrock_symbolic_only/
 __pycache__/
 *.txt
