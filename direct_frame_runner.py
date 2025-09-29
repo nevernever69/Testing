@@ -19,7 +19,7 @@ import logging
 
 class DirectFrameRunner:
     def __init__(self, env_name, provider, game_type, output_dir="./experiments/", prompt=None, model_id=None,
-                 api_key=None, num_frames=600, aws_region="us-east-1", disable_history=False):
+                 api_key=None, num_frames=600, aws_region="us-east-1", disable_history=False, seed=None):
         self.provider = provider.lower()  # 'openai', 'gemini', 'claude', 'bedrock' or 'rand'
         self.sys_prompt = prompt or ""
         self.env_name = env_name
@@ -35,6 +35,7 @@ class DirectFrameRunner:
         self.aws_region = aws_region  # AWS region for Bedrock
         self.disable_history = disable_history  # Flag to disable history mechanism
         self.api_key = api_key
+        self.seed = seed
 
         # Results directory structure
         self.base_dir = output_dir
@@ -93,7 +94,13 @@ class DirectFrameRunner:
         gym.register_envs(ale_py)
         env = gym.make(env_name, render_mode="rgb_array")
         env = OrderEnforcing(env, disable_render_order_enforcing=True)
-        env.reset()
+
+        # Set seed if provided
+        if self.seed is not None:
+            env.reset(seed=self.seed)
+            np.random.seed(self.seed)
+        else:
+            env.reset()
         self.env = RecordVideo(env=env,
                                          video_folder=self.new_dir,
                                          name_prefix=base + "_rollout",
@@ -159,6 +166,7 @@ class DirectFrameRunner:
         self.logger.info(f"Number of frames: {self.num_timesteps}")
         self.logger.info(f"Skip initial frames: {self.skip_initial_frames}")
         self.logger.info(f"AWS Region: {self.aws_region}")
+        self.logger.info(f"Seed: {self.seed if self.seed is not None else 'None (random)'}")
 
         # Log the exact prompt that will be used
         prompt = self._get_game_prompt()
@@ -791,6 +799,7 @@ def main():
     parser.add_argument("--num_frames", type=int, default=600, help="Number of frames to run (default: 600)")
     parser.add_argument("--aws_region", type=str, default="us-east-1", help="AWS region for Bedrock (default: us-east-1)")
     parser.add_argument("--disable_history", action="store_true", help="Disable history mechanism (conversation memory)")
+    parser.add_argument("--seed", type=int, default=None, help="Random seed for reproducible runs (default: None for random)")
 
     args = parser.parse_args()
 
@@ -813,7 +822,8 @@ def main():
         api_key=api_key,
         num_frames=args.num_frames,
         aws_region=args.aws_region,
-        disable_history=args.disable_history
+        disable_history=args.disable_history,
+        seed=args.seed
     )
 
 
