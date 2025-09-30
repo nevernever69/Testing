@@ -15,6 +15,7 @@ from automatic_benchmark import BenchmarkDatasetLoader, AutomaticEvaluator
 from automatic_benchmark.pipeline_adapters import DirectFrameAdapter, AdvancedGameAdapter
 from automatic_benchmark.utils import get_all_prompts
 from automatic_benchmark.utils.detailed_logger import DetailedBenchmarkLogger
+from automatic_benchmark.utils.coordinate_scaler import scale_ground_truth_coordinates
 
 
 def test_single_frame(
@@ -72,6 +73,13 @@ def test_single_frame(
     print(f"Complexity: {ground_truth.get('complexity', {}).get('complexity_category', 'unknown')}")
     print(f"Objects: {len(ground_truth.get('ocatari_data', {}).get('objects', []))}\n")
 
+    # Scale frame and coordinates to match VLM input (160x210 -> 1280x720)
+    print("📐 Scaling frame and coordinates from 160x210 to 1280x720...")
+    import cv2
+    frame_scaled = cv2.resize(frame, (1280, 720), interpolation=cv2.INTER_LINEAR)
+    ground_truth = scale_ground_truth_coordinates(ground_truth)
+    print("✅ Frame and coordinates scaled\n")
+
     # Initialize evaluator
     print("🧠 Initializing evaluator...")
     evaluator = AutomaticEvaluator(
@@ -104,7 +112,7 @@ def test_single_frame(
             print(f"   Prompt: {prompt[:80]}...")
 
             # Get VLM response
-            response = vision_only.process(frame, prompt)
+            response = vision_only.process(frame_scaled, prompt)
             print(f"   Response: {response[:120]}...")
 
             # Evaluate
@@ -130,16 +138,21 @@ def test_single_frame(
                 if judge_raw:
                     llm_judge_response = json.dumps(judge_raw, indent=2)
 
+            # Get actual prompt that was sent to VLM (may include image + text)
+            actual_prompt = vision_only.get_actual_prompt()
+
             logger.log_evaluation(
                 frame_id=frame_id,
                 pipeline="Vision-Only",
                 task_type=task_type,
-                task_prompt=prompt,
+                task_prompt=actual_prompt,  # Use actual prompt instead of original
                 vlm_response=response,
                 ground_truth=ground_truth,
                 eval_result=eval_result,
                 llm_judge_prompt=llm_judge_prompt,
-                llm_judge_response=llm_judge_response
+                llm_judge_response=llm_judge_response,
+                frame=frame_scaled,  # Use scaled frame
+                detection_results=None  # No detection for vision-only
             )
 
             vision_only_results[task_type] = {
@@ -186,7 +199,7 @@ def test_single_frame(
             print(f"   Prompt: {prompt[:80]}...")
 
             # Get VLM response (with symbolic info)
-            response = vision_symbol.process(frame, prompt)
+            response = vision_symbol.process(frame_scaled, prompt)
             print(f"   Response: {response[:120]}...")
 
             # Evaluate
@@ -212,16 +225,22 @@ def test_single_frame(
                 if judge_raw:
                     llm_judge_response = json.dumps(judge_raw, indent=2)
 
+            # Get actual prompt with symbolic information
+            actual_prompt = vision_symbol.get_actual_prompt()
+            detection_results = vision_symbol.get_detection_results()
+
             logger.log_evaluation(
                 frame_id=frame_id,
                 pipeline="Vision+Symbol",
                 task_type=task_type,
-                task_prompt=prompt,
+                task_prompt=actual_prompt,  # Use actual prompt with symbolic info
                 vlm_response=response,
                 ground_truth=ground_truth,
                 eval_result=eval_result,
                 llm_judge_prompt=llm_judge_prompt,
-                llm_judge_response=llm_judge_response
+                llm_judge_response=llm_judge_response,
+                frame=frame_scaled,  # Use scaled frame
+                detection_results=detection_results  # Pass detection results for annotation
             )
 
             vision_symbol_results[task_type] = {
