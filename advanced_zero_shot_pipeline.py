@@ -214,8 +214,18 @@ Return ONLY valid JSON in the following format:
             return result
 
         except (json.JSONDecodeError, ValueError) as e:
+            # Try parsing markdown format (Bedrock Llama models)
+            print(f"JSON parsing failed, trying markdown parser...")
+            try:
+                result = self._parse_markdown_detection(response)
+                if result and "objects" in result and len(result["objects"]) > 0:
+                    print(f"✅ Markdown parsing successful! Found {len(result['objects'])} objects")
+                    return result
+            except Exception as markdown_error:
+                print(f"Markdown parsing also failed: {markdown_error}")
+
             print(f"Error parsing detection response: {e}")
-            print(f"Response was: {response}")
+            print(f"Response was: {response[:500]}...")
             return {"error": "parsing_error"}
     
     def draw_bounding_boxes(self, image_path: str, detections: Dict, output_path: str) -> None:
@@ -601,6 +611,76 @@ Return ONLY valid JSON in the following format:
             # If anything goes wrong, just return the original response
             return response
     
+    def _parse_markdown_detection(self, response: str) -> Dict:
+        """
+        Parse markdown-formatted detection response from Bedrock Llama models.
+
+        Expected format:
+        **Objects:**
+        *   **Object Name**
+            *   Label: Object Name
+            *   Coordinates: [x1, y1, x2, y2]
+            *   Confidence: 0.95
+        """
+        import re
+
+        objects = []
+
+        # Split by object sections (lines starting with * followed by **)
+        # Pattern: *   **Label Name**
+        object_sections = re.split(r'\n\*\s+\*\*', response)
+
+        for section in object_sections[1:]:  # Skip first section (before first object)
+            try:
+                # Extract label (first line before ** closing)
+                label_match = re.search(r'^([^*\n]+)\*\*', section)
+                if not label_match:
+                    continue
+                label = label_match.group(1).strip()
+
+                # Extract coordinates
+                coords_match = re.search(r'Coordinates:\s*\[([^\]]+)\]', section, re.IGNORECASE)
+                if not coords_match:
+                    continue
+                coords_str = coords_match.group(1)
+                coordinates = [float(x.strip()) for x in coords_str.split(',')]
+
+                if len(coordinates) != 4:
+                    continue
+
+                # Extract confidence
+                conf_match = re.search(r'Confidence:\s*([\d.]+)', section, re.IGNORECASE)
+                confidence = float(conf_match.group(1)) if conf_match else 0.95
+
+                # Extract description (optional)
+                desc_match = re.search(r'Description:\s*(.+?)(?=\n\*|$)', section, re.IGNORECASE | re.DOTALL)
+                description = desc_match.group(1).strip() if desc_match else ""
+
+                obj = {
+                    "label": label,
+                    "coordinates": coordinates,
+                    "confidence": confidence,
+                    "description": description
+                }
+
+                # Validate detection
+                if self._validate_detection(obj):
+                    objects.append(obj)
+
+            except Exception as e:
+                print(f"Warning: Failed to parse object section: {e}")
+                continue
+
+        if not objects:
+            return {"error": "no_objects_found"}
+
+        return {
+            "objects": objects,
+            "image_info": {
+                "total_objects": len(objects)
+            }
+        }
+
     def _validate_detection(self, detection: Dict) -> bool:
         """Validate detection object structure"""
         required_fields = ['label', 'coordinates', 'confidence']
