@@ -3,7 +3,6 @@ inspection_test/
 test_with_ground_truth/
 experiments_1/
 detailed_results/
-automatic_benchmark/
 *.json
 simple_debug_test/
 real_test_results/
