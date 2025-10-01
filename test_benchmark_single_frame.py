@@ -25,7 +25,8 @@ def test_single_frame(
     openrouter_key: str = None,
     aws_region: str = 'us-east-1',
     use_llm_judge: bool = False,
-    force_llm_judge: bool = False
+    force_llm_judge: bool = False,
+    llm_judge_only: bool = False
 ):
     """
     Test benchmark with a single frame.
@@ -38,6 +39,7 @@ def test_single_frame(
         aws_region: AWS region for Bedrock
         use_llm_judge: Enable LLM-as-judge scoring
         force_llm_judge: Force LLM judge on ALL evaluations
+        llm_judge_only: Use ONLY LLM judge (disable rule-based and semantic)
     """
     print(f"\n{'='*70}")
     print(f"Testing Benchmark System with Single Frame")
@@ -86,9 +88,21 @@ def test_single_frame(
         use_semantic=True,
         use_llm_judge=use_llm_judge,
         force_llm_judge=force_llm_judge,
-        llm_provider='bedrock' if use_llm_judge else None
+        llm_judge_only=llm_judge_only,
+        llm_provider='bedrock' if use_llm_judge or llm_judge_only else None
     )
-    print(f"✅ Evaluator ready (LLM judge: {use_llm_judge})\n")
+
+    # Debug info
+    if llm_judge_only:
+        print(f"✅ Evaluator ready (LLM judge ONLY mode - no rule-based/semantic)")
+        if evaluator.llm_judge:
+            print(f"   LLM Judge available: {evaluator.llm_judge.available}")
+            print(f"   LLM Judge model: {evaluator.llm_judge.model}")
+        else:
+            print(f"   ⚠️  LLM Judge is None!")
+        print()
+    else:
+        print(f"✅ Evaluator ready (LLM judge: {use_llm_judge})\n")
 
     # Get prompts
     prompts = get_all_prompts()
@@ -124,9 +138,19 @@ def test_single_frame(
             )
 
             print(f"   Score: {eval_result.final_score:.3f} (confidence: {eval_result.confidence:.3f})")
-            print(f"   Breakdown: rule={eval_result.rule_based_result['score']:.3f}, semantic={eval_result.semantic_result['score']:.3f}")
+
+            # Only show breakdown if not in LLM judge only mode
+            if eval_result.rule_based_result and eval_result.semantic_result:
+                print(f"   Breakdown: rule={eval_result.rule_based_result['score']:.3f}, semantic={eval_result.semantic_result['score']:.3f}")
+
             if eval_result.llm_judge_result:
                 print(f"   LLM Judge: {eval_result.llm_judge_result['score']:.3f}")
+
+            if eval_result.two_tier_result:
+                tt = eval_result.two_tier_result
+                print(f"   Two-Tier: core={tt['core_score']:.3f} ({tt['breakdown']['core_detected']}/{tt['breakdown']['core_objects']}), "
+                      f"secondary={tt['secondary_score']:.3f} ({tt['breakdown']['secondary_detected']}/{tt['breakdown']['secondary_objects']}), "
+                      f"final={tt['final_score']:.3f}")
             print()
 
             # Log detailed evaluation
@@ -211,9 +235,19 @@ def test_single_frame(
             )
 
             print(f"   Score: {eval_result.final_score:.3f} (confidence: {eval_result.confidence:.3f})")
-            print(f"   Breakdown: rule={eval_result.rule_based_result['score']:.3f}, semantic={eval_result.semantic_result['score']:.3f}")
+
+            # Only show breakdown if not in LLM judge only mode
+            if eval_result.rule_based_result and eval_result.semantic_result:
+                print(f"   Breakdown: rule={eval_result.rule_based_result['score']:.3f}, semantic={eval_result.semantic_result['score']:.3f}")
+
             if eval_result.llm_judge_result:
                 print(f"   LLM Judge: {eval_result.llm_judge_result['score']:.3f}")
+
+            if eval_result.two_tier_result:
+                tt = eval_result.two_tier_result
+                print(f"   Two-Tier: core={tt['core_score']:.3f} ({tt['breakdown']['core_detected']}/{tt['breakdown']['core_objects']}), "
+                      f"secondary={tt['secondary_score']:.3f} ({tt['breakdown']['secondary_detected']}/{tt['breakdown']['secondary_objects']}), "
+                      f"final={tt['final_score']:.3f}")
             print()
 
             # Log detailed evaluation
@@ -313,6 +347,8 @@ def main():
                        help='Enable LLM-as-judge scoring')
     parser.add_argument('--force_llm_judge', action='store_true',
                        help='Force LLM judge on ALL evaluations (expensive, use for detailed analysis)')
+    parser.add_argument('--llm_judge_only', action='store_true',
+                       help='Use ONLY LLM judge (disable rule-based and semantic scoring)')
 
     args = parser.parse_args()
 
@@ -323,7 +359,8 @@ def main():
         openrouter_key=args.openrouter_key,
         aws_region=args.aws_region,
         use_llm_judge=args.use_llm_judge,
-        force_llm_judge=args.force_llm_judge
+        force_llm_judge=args.force_llm_judge,
+        llm_judge_only=args.llm_judge_only
     )
 
 
