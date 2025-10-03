@@ -1,0 +1,75 @@
+# Core dependencies for Atari VLM Benchmark System
+# =============================================================================
+
+# Computer Vision and Image Processing
+opencv-python>=4.8.0
+Pillow>=10.0.0
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.11.0
+
+# Progress Bars
+tqdm>=4.65.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# Type Hints (for older Python versions)
+typing-extensions>=4.7.0
+
+# Dataset Generation and Ground Truth
+# =============================================================================
+ocatari>=1.5.0
+gymnasium[atari]>=0.29.0
+ale-py>=0.8.1
+
+# Visualization and Paper Figures
+# =============================================================================
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Semantic Scoring (Sentence Transformers)
+# =============================================================================
+sentence-transformers>=2.2.0
+torch>=2.0.0
+transformers>=4.30.0
+
+# LLM Providers (choose based on your provider)
+# =============================================================================
+
+# Option 1: AWS Bedrock (recommended for this project)
+boto3>=1.34.0
+botocore>=1.34.0
+
+# Option 2: OpenAI (optional)
+openai>=1.0.0
+
+# Option 3: Anthropic (optional)
+anthropic>=0.18.0
+
+# Development Dependencies (optional)
+# =============================================================================
+# pytest>=7.4.0
+# black>=23.7.0
+# flake8>=6.0.0
+
+# Installation Instructions
+# =============================================================================
+# 1. Create a virtual environment:
+#    python -m venv venv
+#    source venv/bin/activate  (on Linux/Mac)
+#    venv\Scripts\activate     (on Windows)
+#
+# 2. Install dependencies:
+#    pip install -r requirements.txt
+#
+# 3. For AWS Bedrock, configure credentials:
+#    aws configure
+#
+# 4. For OpenAI, set API key:
+#    export OPENAI_API_KEY="your-key-here"
+#
+# 5. For Anthropic, set API key:
+#    export ANTHROPIC_API_KEY="your-key-here"
