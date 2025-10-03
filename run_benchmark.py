@@ -55,7 +55,7 @@ class BenchmarkRunner:
             print(f"Detailed logging: {self.logger.get_session_dir()}")
         print(f"{'='*70}\n")
 
-    def run_single_pipeline(self, pipeline, pipeline_name: str, limit: int = None) -> dict:
+    def run_single_pipeline(self, pipeline, pipeline_name: str, limit: int = None, game_filter: str = None) -> dict:
         """
         Run benchmark on a single pipeline.
 
@@ -82,7 +82,13 @@ class BenchmarkRunner:
         }
 
         # Get all frames
-        frames = self.loader.get_frames()
+        if game_filter:
+            # Try case-insensitive match
+            all_frames = self.loader.get_frames()
+            frames = [f for f in all_frames if f['game'].lower() == game_filter.lower()]
+            print(f"🎮 Filtering to game: {game_filter} ({len(frames)} frames)\n")
+        else:
+            frames = self.loader.get_frames()
 
         # Limit frames if specified
         if limit is not None:
@@ -287,8 +293,13 @@ class BenchmarkRunner:
         print(f"SUMMARY: {results['pipeline_name']}")
         print(f"{'='*70}\n")
 
+        # Check if any evaluations were run
+        if not results['evaluations']:
+            print("⚠️  No evaluations were run (0 frames matched filters)")
+            return
+
         # Overall
-        if 'overall' in stats:
+        if 'overall' in stats and stats['overall']:
             overall = stats['overall']
             print(f"Overall Score: {overall['mean']:.3f} ± {overall['std']:.3f} (n={overall['n']})")
 
@@ -336,47 +347,50 @@ class BenchmarkRunner:
             'game_comparison': {}
         }
 
-        # Overall comparison
+        # Overall comparison (normalize to 0-100 scale)
         baseline_overall = baseline['statistics']['overall']['mean']
         comparison_overall = comparison['statistics']['overall']['mean']
         improvement = comparison_overall - baseline_overall
-        improvement_pct = (improvement / baseline_overall * 100) if baseline_overall > 0 else 0
 
         comparison_results['overall_comparison'] = {
             'baseline_score': baseline_overall,
             'comparison_score': comparison_overall,
             'absolute_improvement': improvement,
-            'percent_improvement': improvement_pct
+            'baseline_score_100': baseline_overall * 100,
+            'comparison_score_100': comparison_overall * 100,
+            'improvement_points': improvement * 100
         }
 
-        # Per-task comparison
+        # Per-task comparison (normalize to 0-100 scale)
         for task in ['visual', 'spatial', 'strategy', 'identification']:
             if task in baseline['statistics']['per_task'] and task in comparison['statistics']['per_task']:
                 baseline_score = baseline['statistics']['per_task'][task]['mean']
                 comparison_score = comparison['statistics']['per_task'][task]['mean']
                 improvement = comparison_score - baseline_score
-                improvement_pct = (improvement / baseline_score * 100) if baseline_score > 0 else 0
 
                 comparison_results['task_comparison'][task] = {
                     'baseline_score': baseline_score,
                     'comparison_score': comparison_score,
                     'absolute_improvement': improvement,
-                    'percent_improvement': improvement_pct
+                    'baseline_score_100': baseline_score * 100,
+                    'comparison_score_100': comparison_score * 100,
+                    'improvement_points': improvement * 100
                 }
 
-        # Per-game comparison
+        # Per-game comparison (normalize to 0-100 scale)
         for game in baseline['statistics'].get('per_game', {}).keys():
             if game in comparison['statistics'].get('per_game', {}):
                 baseline_score = baseline['statistics']['per_game'][game]['mean']
                 comparison_score = comparison['statistics']['per_game'][game]['mean']
                 improvement = comparison_score - baseline_score
-                improvement_pct = (improvement / baseline_score * 100) if baseline_score > 0 else 0
 
                 comparison_results['game_comparison'][game] = {
                     'baseline_score': baseline_score,
                     'comparison_score': comparison_score,
                     'absolute_improvement': improvement,
-                    'percent_improvement': improvement_pct
+                    'baseline_score_100': baseline_score * 100,
+                    'comparison_score_100': comparison_score * 100,
+                    'improvement_points': improvement * 100
                 }
 
         # Save comparison
@@ -397,18 +411,18 @@ class BenchmarkRunner:
 
         # Overall
         overall = comparison['overall_comparison']
-        print(f"Overall: {overall['baseline_score']:.3f} → {overall['comparison_score']:.3f} ({overall['percent_improvement']:+.1f}%)")
+        print(f"Overall: {overall['baseline_score_100']:.1f} → {overall['comparison_score_100']:.1f} points ({overall['improvement_points']:+.1f})")
 
         # Per-task
         print(f"\nPer-Task Improvements:")
         for task, stats in comparison['task_comparison'].items():
-            print(f"  {task.capitalize():15}: {stats['baseline_score']:.3f} → {stats['comparison_score']:.3f} ({stats['percent_improvement']:+.1f}%)")
+            print(f"  {task.capitalize():15}: {stats['baseline_score_100']:.1f} → {stats['comparison_score_100']:.1f} points ({stats['improvement_points']:+.1f})")
 
         # Per-game
         if comparison['game_comparison']:
             print(f"\nPer-Game Improvements:")
             for game, stats in comparison['game_comparison'].items():
-                print(f"  {game:20}: {stats['baseline_score']:.3f} → {stats['comparison_score']:.3f} ({stats['percent_improvement']:+.1f}%)")
+                print(f"  {game:20}: {stats['baseline_score_100']:.1f} → {stats['comparison_score_100']:.1f} points ({stats['improvement_points']:+.1f})")
 
         print(f"\n{'='*70}\n")
 
@@ -435,6 +449,8 @@ def main():
     parser.add_argument('--game_type', type=str, default='pong',
                        choices=['pong', 'breakout', 'space_invaders'],
                        help='Game type for detector')
+    parser.add_argument('--game', type=str, default=None,
+                       help='Filter to only run on specific game (e.g., "pong", "breakout")')
     parser.add_argument('--use_llm_judge', action='store_true',
                        help='Enable LLM-as-judge scoring')
     parser.add_argument('--llm_judge_only', action='store_true',
@@ -482,7 +498,7 @@ def main():
             aws_region=args.aws_region
         )
 
-        vision_only_results = runner.run_single_pipeline(vision_only, 'Vision-Only', limit=args.limit)
+        vision_only_results = runner.run_single_pipeline(vision_only, 'Vision-Only', limit=args.limit, game_filter=args.game)
 
     if args.pipeline in ['vision_symbol', 'both']:
         print("\n" + "="*70)
@@ -498,7 +514,7 @@ def main():
             game_type=args.game_type
         )
 
-        vision_symbol_results = runner.run_single_pipeline(vision_symbol, 'Vision+Symbol', limit=args.limit)
+        vision_symbol_results = runner.run_single_pipeline(vision_symbol, 'Vision+Symbol', limit=args.limit, game_filter=args.game)
 
     # Compare if both were run
     if args.pipeline == 'both':

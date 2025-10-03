@@ -166,11 +166,12 @@ The VLM was asked to provide THREE parts:
 **IMPORTANT:**
 - DO NOT penalize for spatial descriptions in visual task
 - DO NOT penalize for saying "projectile above player" - that's spatial, not visual
-- DO NOT penalize for mentioning score displays, UI elements, lives counter
-- Mentioning score/UI: Completely IGNORE (no penalty, no credit)
+- DO NOT penalize for mentioning score displays, UI elements, lives counter, timers, or ANY UI elements
+- Mentioning score/UI: Completely IGNORE (no penalty, no credit, DO NOT list as issue)
 - DO NOT penalize for including coordinates (e.g., "at x=300, y=400") - just IGNORE them
 - If VLM mentions coordinates, IGNORE them when evaluating visual reasoning
 - FOCUS ONLY on: What objects? How many? What properties?
+- Score displays, lives counters, timers are NOT issues - IGNORE them completely
 
 {game_specific_visual}
 """
@@ -228,10 +229,11 @@ The VLM was asked to provide FOUR parts:
 - Talking about colors/appearance instead of spatial relationships: -0.25
 
 **IMPORTANT - DO NOT penalize for mentioning UI elements:**
-- Mentioning score displays, lives, UI elements: Completely IGNORE (no penalty, no credit)
+- Mentioning score displays, lives, UI elements, timers, or ANY UI: Completely IGNORE (no penalty, no credit, DO NOT list as issue)
 - Including "scores at top" or "lives at bottom" is PERFECTLY FINE
 - Only penalize if they ONLY described UI and completely ignored game objects
 - Example: "Paddles on left and right, scores at top" = PERFECTLY ACCEPTABLE
+- Score displays are NOT issues - IGNORE them completely in your evaluation
 
 **CRITICAL - What counts as answering the task:**
 ✅ GOOD: "Ball is at top-center (absolute), to the right of left paddle (relative), close to left paddle (distance), vertically aligned with left paddle (alignment)"
@@ -301,7 +303,8 @@ The VLM was asked to provide THREE parts:
 **IMPORTANT - DO NOT penalize for scope:**
 - Mentioning barriers/shields is BONUS, not required
 - Mentioning future actions is BONUS, not required
-- Mentioning score displays/UI: Completely ignore (no penalty, no credit)
+- Mentioning score displays/UI/timers/lives: Completely ignore (no penalty, no credit, DO NOT list as issue)
+- Score displays are NOT issues - IGNORE them completely in your evaluation
 - FOCUS ONLY on: Did they answer situation/action/justification for the NEXT move?
 
 **IMPORTANT:**
@@ -365,12 +368,50 @@ Both Vision-Only and Vision+Symbol have access to the same visual information to
 - DO NOT say "Included coordinate data which wasn't requested"
 - Coordinates should be IGNORED, not penalized
 
+**CRITICAL - NEVER PENALIZE UI MENTIONS:**
+- Score displays, lives counters, timers, UI elements are NEVER issues
+- DO NOT list them in "identified_issues" under ANY circumstances
+- DO NOT deduct points for mentioning them
+- COMPLETELY IGNORE any UI mentions when scoring
+- Only penalize if VLM describes ONLY UI and ignores ALL game objects
+
+**SCORING BREAKDOWN REQUIREMENT:**
+You MUST provide a detailed breakdown showing:
+1. Every strength with its point value (e.g., "+0.40 for identifying all core objects")
+2. Every limitation/penalty with its point value (e.g., "-0.30 for wrong count")
+3. The final score calculation showing how you arrived at the total
+
+This makes it easy to verify your scoring manually.
+
 Return ONLY a JSON object with this exact format:
 {{
   "score": <float between 0.0 and 1.0>,
   "reasoning": "<2-3 sentence explanation focusing on correctness, not precision>",
   "identified_issues": ["<specific issue1>", "<specific issue2>"],
-  "strengths": ["<specific strength1>", "<specific strength2>"]
+  "strengths": ["<specific strength1>", "<specific strength2>"],
+  "score_breakdown": {{
+    "strengths": [
+      {{"description": "<what they did well>", "points": <float>}},
+      {{"description": "<another strength>", "points": <float>}}
+    ],
+    "penalties": [
+      {{"description": "<what was wrong/missing>", "points": <negative float>}},
+      {{"description": "<another issue>", "points": <negative float>}}
+    ],
+    "calculation": "<show how strengths and penalties add up to final score>"
+  }}
+}}
+
+Example score_breakdown:
+{{
+  "strengths": [
+    {{"description": "Identified all core objects (paddle, ball)", "points": 0.40}},
+    {{"description": "Provided accurate counts for all objects", "points": 0.35}}
+  ],
+  "penalties": [
+    {{"description": "Did not describe visual properties (colors, sizes)", "points": -0.25}}
+  ],
+  "calculation": "0.40 + 0.35 - 0.25 = 0.50"
 }}
 
 Be FAIR, strict about correctness, and lenient about precision. Base evaluation ONLY on ground truth data.

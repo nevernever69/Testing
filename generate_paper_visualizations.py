@@ -126,8 +126,8 @@ class PaperVisualizationGenerator:
                    ha='center', va='bottom', fontweight='bold', fontsize=12)
 
         # Add improvement annotation
-        improvement = self.comparison_results['overall_comparison']['percent_improvement']
-        ax.annotate(f'+{improvement:.1f}%',
+        improvement_points = self.comparison_results['overall_comparison']['improvement_points']
+        ax.annotate(f'+{improvement_points:.1f} pts',
                    xy=(1, scores[1]), xytext=(0.5, scores[1] + 0.05),
                    arrowprops=dict(arrowstyle='->', color='red', lw=2),
                    fontsize=14, color='red', fontweight='bold')
@@ -777,18 +777,18 @@ class PaperVisualizationGenerator:
         for task, data in self.comparison_results['task_comparison'].items():
             vo = data['baseline_score']
             vs = data['comparison_score']
-            imp = data['percent_improvement']
+            imp = data['improvement_points']
 
-            latex.append(f"{task.capitalize()} & {vo:.3f} & {vs:.3f} & +{imp:.1f}\\% \\\\")
+            latex.append(f"{task.capitalize()} & {vo:.3f} & {vs:.3f} & +{imp:.1f} pts \\\\")
 
         latex.append("\\midrule")
 
         overall = self.comparison_results['overall_comparison']
         vo_overall = overall['baseline_score']
         vs_overall = overall['comparison_score']
-        imp_overall = overall['percent_improvement']
+        imp_overall = overall['improvement_points']
 
-        latex.append(f"\\textbf{{Overall}} & \\textbf{{{vo_overall:.3f}}} & \\textbf{{{vs_overall:.3f}}} & \\textbf{{+{imp_overall:.1f}\\%}} \\\\")
+        latex.append(f"\\textbf{{Overall}} & \\textbf{{{vo_overall:.3f}}} & \\textbf{{{vs_overall:.3f}}} & \\textbf{{+{imp_overall:.1f} pts}} \\\\")
 
         latex.append("\\bottomrule")
         latex.append("\\end{tabular}")
