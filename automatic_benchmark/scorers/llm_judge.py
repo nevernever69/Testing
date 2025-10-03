@@ -22,6 +22,7 @@ class LLMJudge(BaseScorer):
         provider: str = 'openai',
         model: str = None,
         api_key: str = None,
+        aws_region: str = None,
         **kwargs
     ):
         """
@@ -31,12 +32,14 @@ class LLMJudge(BaseScorer):
             provider: 'openai', 'anthropic', or 'bedrock'
             model: Model name (defaults from config if not provided)
             api_key: API key (optional, reads from environment if not provided)
+            aws_region: AWS region for Bedrock (optional, defaults to us-east-1)
         """
         super().__init__(**kwargs)
 
         self.provider = provider
         self.model = model or LLM_JUDGE_PROVIDERS[provider]['model']
         self.api_key = api_key
+        self.aws_region = aws_region or 'us-east-1'
 
         # Initialize client based on provider
         self.client = None
@@ -84,7 +87,7 @@ class LLMJudge(BaseScorer):
         """Initialize AWS Bedrock client."""
         try:
             from aws_model import BedrockUnifiedClient
-            self.client = BedrockUnifiedClient(region_name='us-east-1')
+            self.client = BedrockUnifiedClient(region_name=self.aws_region)
         except ImportError:
             raise ImportError("BedrockUnifiedClient not available. Make sure aws_model.py is in the path.")
 

@@ -132,66 +132,57 @@ EVALUATION CRITERIA:
 
     if task_type == 'visual':
         base_prompt += """
-**FAIR EVALUATION PRINCIPLE:**
-This is a VISUAL IDENTIFICATION task, NOT a spatial relationship task.
-Judge on: Did they identify the CORRECT objects? (not their spatial relationships)
+**MULTI-PART VISUAL EVALUATION:**
+The VLM was asked to provide THREE parts:
+1. OBJECTS: List all objects present
+2. COUNTS: How many of each object
+3. PROPERTIES: Visual properties (colors, sizes, states)
 
-**DO NOT penalize for:**
-- Incorrect spatial descriptions (e.g., "projectile above player" when it's below)
-- Vague position descriptions (e.g., "in upper area")
-- Approximate positions
-→ These are spatial issues, penalize them in SPATIAL task only!
+**SCORING BREAKDOWN (Stricter):**
 
-**DO penalize for:**
-- Hallucinating objects that don't exist
-- Missing core gameplay objects
-- Misidentifying object types
+**Part 1: Objects (40%)** - Did they identify all objects?
+- Identified all core objects: +0.40
+- Missing 1 core object: -0.40 (STRICT - core objects are critical!)
+- Hallucinated object (mentioned but doesn't exist): -0.50 per fake object
+- Skipped this section entirely: -0.30
 
-**Scoring:**
-1. **Core Game Objects** (70%): Did they identify the MAIN gameplay objects?
-   - Ball mentioned correctly: +0.25
-   - Player paddle mentioned correctly: +0.25
-   - Enemy paddle mentioned correctly: +0.25
-   - (Core objects are critical for gameplay understanding)
+**Part 2: Counts (35%)** - Are counts accurate?
+- All counts correct: +0.35
+- Wrong count for an object type: -0.30 per wrong count
+- No counts provided: -0.30
+- Approximate counts (e.g., "~10" when 8): Accept if within ±20% for objects >10
+- For critical objects (player, ball): Exact count required
 
-2. **Secondary Objects** (10%): Bonus for noticing additional elements
-   - Score displays mentioned: +0.05 (bonus, not required)
-   - Other UI elements: +0.05 (bonus, not required)
-   - Note: Mentioning score displays is fine, but shouldn't be the main focus
+**Part 3: Properties (25%)** - Did they describe visual details?
+- Described properties (colors, sizes, states): +0.25
+- No properties described: -0.25
+- Partial properties: proportional credit
 
-3. **Completeness** (20%): Did they find all CORE objects?
-   - All core objects found: +0.2
-   - 66% core objects found: +0.13
-   - 33% core objects found: +0.07
+**CRITICAL PENALTIES (Applied to final score):**
+- Incomplete answer (skipped entire section): -0.30 per section
+- Only described UI without game objects: Score capped at 0.15
+- Spatial descriptions: NO PENALTY (evaluated in spatial task)
 
-4. **No Hallucinations** (deduction): -0.3 per fake object
-
-**DO NOT deduct points for:**
-- Not mentioning exact coordinates
-- Imprecise color/size descriptions
-- Using qualitative vs quantitative descriptions
-- Mentioning score displays (they're visible in frame, perfectly fine to mention)
-- Not mentioning secondary elements like scores/UI
-
-**DO deduct points for:**
-- Missing CORE game objects (paddle, ball, enemies): -0.25 per missing core object
-- Hallucinated objects that don't exist: -0.3 per fake object
-- ONLY mentioning score displays without identifying game objects: major penalty
-- Completely wrong object identification: -0.4
-
-**Example scoring:**
-- "I see two paddles, a ball, and score displays showing 0-0": 0.95+ (perfect)
-- "I see two paddles and a ball": 0.85+ (good, didn't mention scores but that's fine)
-- "I see score displays showing 0-0": 0.1 (failed - only mentioned UI, not game objects)
+**IMPORTANT:**
+- DO NOT penalize for spatial descriptions in visual task
+- DO NOT penalize for saying "projectile above player" - that's spatial, not visual
+- DO NOT penalize for mentioning score displays, UI elements, lives counter
+- Mentioning score/UI: Completely IGNORE (no penalty, no credit)
+- DO NOT penalize for including coordinates (e.g., "at x=300, y=400") - just IGNORE them
+- If VLM mentions coordinates, IGNORE them when evaluating visual reasoning
+- FOCUS ONLY on: What objects? How many? What properties?
 
 {game_specific_visual}
 """
 
     elif task_type == 'spatial':
         base_prompt += """
-**STRICT EVALUATION PRINCIPLE:**
-Spatial task is about describing RELATIONSHIPS BETWEEN GAME OBJECTS.
-Describing colors, visual artifacts, or score displays is NOT relevant.
+**MULTI-PART SPATIAL EVALUATION:**
+The VLM was asked to provide FOUR parts:
+1. ABSOLUTE POSITIONS: Where is each object located on screen?
+2. RELATIVE POSITIONS: What is the position of each object relative to others?
+3. DISTANCES: Which objects are close together? Which are far apart?
+4. ALIGNMENT: Are any objects vertically or horizontally aligned?
 
 **IMPORTANT - Vision+Symbol Mode:**
 - If VLM provides specific coordinates/measurements, they have access to symbolic data
@@ -199,101 +190,133 @@ Describing colors, visual artifacts, or score displays is NOT relevant.
 - DO NOT criticize spacing/distance precision - they calculated it from coordinates
 - Focus on whether relationships are CORRECT, not precision of measurements
 
-**Scoring (STRICT):**
-1. **Core Object Relationships** (70%): Did they describe relationships between KEY objects?
-   - For each correct object pair relationship (Player-Ball, Player-Enemy, Ball-Enemy):
-     * Correct horizontal relationship (left/right): +0.17
-     * Correct vertical relationship (above/below): +0.17
-     * Correct distance assessment (near/far): +0.1
-   - Maximum 3 pairs expected, total 0.7 possible
+**SCORING BREAKDOWN (Stricter):**
 
-2. **Relationship Accuracy** (20%): Are the spatial statements CORRECT?
-   - Each correct directional claim: maintains score
-   - Each WRONG directional claim: -0.15 per error (fair penalty)
-     Examples of WRONG claims:
-     * Says "left" when object is on right
-     * Says "above" when object is below
-     * Says "directly above player" when horizontally offset
-     * Says "near formation" when far away
-   - Vague but correct ("near each other"): acceptable, no penalty
-   - Note: Small positional errors are okay, only penalize clear mistakes
+**Part 1: Absolute Positions (25%)** - Did they describe where objects are on screen?
+- Correctly described screen positions (top/middle/bottom, left/center/right): +0.25
+- Partial positions described: proportional credit
+- No absolute positions: -0.30
+- Skipped this section entirely: -0.30
 
-3. **Focus on Game Objects** (10%): Did they describe game object relationships?
-   - Described core game object relationships: +0.1
-   - Also mentioned score displays/UI elements: fine, NO penalty (they're visible in frame)
-   - ONLY described score positions without game objects: 0.0 (failed task)
+**Part 2: Relative Positions (35%)** - Did they describe object relationships?
+- All key relationships correct: +0.35
+- Each WRONG directional claim: -0.35 per error (STRICT)
+  Examples of WRONG claims:
+  * Says "left" when object is on right
+  * Says "above" when object is below
+  * Says "directly above player" when horizontally offset
+  * Says "near formation" when far away
+- Missed key relationship (Player-Ball, Player-Enemy): -0.40 per missing pair
+- No relative positions: -0.35
+- Vague but correct ("near each other"): acceptable, no penalty
+
+**Part 3: Distances (20%)** - Did they assess near/far relationships?
+- Correct distance assessments (near/far/between): +0.20
+- Wrong distance assessment ("near" when far): -0.25 per error
+- No distance assessment: -0.25
+- Partial distance descriptions: proportional credit
+
+**Part 4: Alignment (20%)** - Did they identify aligned objects?
+- Identified vertical/horizontal alignments: +0.20
+- Wrong alignment claim: -0.15 per error
+- No alignment described: No penalty (optional detail)
+- Partial alignment: proportional credit
+
+**CRITICAL PENALTIES (Applied to final score):**
+- Incomplete answer (skipped entire section): -0.30 per section
+- ONLY described UI/scores without game objects: Score capped at 0.15
+- Talking about colors/appearance instead of spatial relationships: -0.25
 
 **IMPORTANT - DO NOT penalize for mentioning UI elements:**
-- Mentioning score displays, lives, UI elements is PERFECTLY FINE
+- Mentioning score displays, lives, UI elements: Completely IGNORE (no penalty, no credit)
+- Including "scores at top" or "lives at bottom" is PERFECTLY FINE
 - Only penalize if they ONLY described UI and completely ignored game objects
-- Including UI descriptions alongside game object relationships is acceptable
+- Example: "Paddles on left and right, scores at top" = PERFECTLY ACCEPTABLE
 
 **CRITICAL - What counts as answering the task:**
-✅ GOOD: "The ball is to the right of the left paddle and above it"
-✅ GOOD: "Player paddle is far to the right, enemy paddle is on the left"
-✅ GOOD: "Ball is between the two paddles. Score displays are at the top showing 0-0"
-✅ ACCEPTABLE: "Ball positioned between paddles, closer to the right one"
+✅ GOOD: "Ball is at top-center (absolute), to the right of left paddle (relative), close to left paddle (distance), vertically aligned with left paddle (alignment)"
+✅ GOOD: "Player paddle on right side, ball in middle, enemy on left. Ball closer to player than enemy."
+✅ ACCEPTABLE: "Paddles on left and right, ball in middle, scores at top" (mentions UI but covers game objects)
 ❌ BAD: "There's a number 20 in orange, and a green vertical line" (ONLY describes UI)
 ❌ BAD: "I see colorful elements arranged across the frame" (no object relationships)
 
-**DO NOT penalize for:**
-- Briefly mentioning score displays (they ARE visible in the frame)
-- Describing score positions along with game objects
-- Example: "Paddles on left and right, ball in middle, scores at top" is perfectly fine
-
-**DO penalize heavily for:**
-- ONLY describing score displays/UI without game object relationships
-- No comparison between game objects provided
-- Talking about colors/appearance instead of spatial relationships
-
-**Automatic very low score (< 0.2) if:**
-- Response ONLY describes UI/scores without mentioning game object relationships
-- No comparison between game objects provided
-- Completely ignores spatial relationships task
-
-**This is a SPATIAL RELATIONSHIP task - judge ability to compare object positions.**
+**This is a SPATIAL RELATIONSHIP task - judge ability to describe positions and relationships.**
 
 {game_specific_spatial}
 """
 
     elif task_type == 'strategy':
         base_prompt += """
-**STRICT EVALUATION PRINCIPLE:**
-Strategy is about ANALYZING CURRENT STATE and giving SPECIFIC OPTIMAL ACTION.
-Game/object identification is NOT the main task - strategic reasoning is.
+**MULTI-PART STRATEGY EVALUATION:**
+The VLM was asked to provide THREE parts:
+1. SITUATION: What is the current game situation? Any threats or opportunities?
+2. ACTION: What specific action should the player take **NEXT**?
+3. JUSTIFICATION: Why is this action optimal? What are you trying to achieve?
 
-**Scoring (STRICT):**
-1. **Specific Action Given** (50%): Did they commit to a SPECIFIC direction/move?
-   - Specific optimal action ("MOVE UP"): +0.5
-   - Specific suboptimal action ("MOVE DOWN"): +0.2
-   - Vague/hedging ("up or down", "align paddle"): +0.1 maximum
-   - Invalid action: 0.0
+**CRITICAL - The prompt asks for THE NEXT ACTION, not a comprehensive strategy:**
+- If VLM says "Move left", that is a COMPLETE answer to "what action next?"
+- DO NOT penalize for not mentioning other actions (shooting, jumping, etc.)
+- DO NOT expect a multi-step plan - just the immediate next action
+- One specific action = CORRECT. Multiple actions = bonus but not required.
 
-2. **State Analysis** (40%): Did they analyze the CURRENT game state?
-   - Analyzed positions to determine correct move: +0.4
-   - Generic advice without state analysis: +0.05 maximum
-   - No analysis: 0.0
+**SCORING BREAKDOWN (Stricter):**
 
-3. **Action Optimality** (10%): Is the action correct for THIS situation?
-   - Correct action for current state: +0.1
-   - Wrong action: 0.0
+**Part 1: Situation Analysis (30%)** - Did they analyze the CURRENT game state?
+- Analyzed positions/threats/opportunities correctly: +0.30
+- Partial analysis (mentioned some elements): +0.15
+- Generic description without analysis: +0.05 maximum
+- No situation analysis: -0.30
+- Skipped this section entirely: -0.30
+
+**Part 2: Action (40%)** - Did they commit to ONE SPECIFIC action?
+- Specific optimal action ("MOVE UP", "MOVE LEFT", "FIRE"): +0.40
+- Specific suboptimal but valid action: +0.15
+- Vague/hedging ("up or down", "align paddle"): +0.05 maximum (VERY LOW)
+- Invalid action (impossible for this game): -0.60 (AUTO-FAIL)
+- No action given: -0.40
+
+**IMPORTANT - ONE action is sufficient:**
+✅ "Move left" = COMPLETE answer (0.40 points if optimal)
+✅ "Move left and prepare to fire" = COMPLETE answer (bonus for detail)
+❌ DO NOT criticize "only mentions movement" - movement IS an action!
+❌ DO NOT expect "should also mention shooting" - that's a FUTURE action, not NEXT action
+
+**Part 3: Justification (30%)** - Did they explain WHY this action is optimal?
+- Clear justification tied to game state: +0.30
+- Generic justification ("to win", "to score"): +0.10
+- No justification: -0.35
+- Skipped this section entirely: -0.35
+
+**CRITICAL PENALTIES (Applied to final score):**
+- Invalid action for this game: -0.60 (Examples: "jump" in Pong, "move up" in Breakout)
+- Hedging with "or" (up OR down, fire OR wait): -0.40
+- Incomplete answer (skipped entire section): -0.35 per section
+- Only described objects without strategy: Score capped at 0.15
 
 **IMPORTANT - Game/object identification worth almost nothing:**
 - Identifying "this is Pong" or "I see paddle/ball" adds MAX +0.05
 - Strategy task tests STRATEGIC REASONING, not object detection
-- Saying "I see a paddle and ball" without strategic advice: 0.1 maximum
+- Saying "I see a paddle and ball" without strategic advice: 0.15 maximum
+
+**IMPORTANT - DO NOT penalize for scope:**
+- Mentioning barriers/shields is BONUS, not required
+- Mentioning future actions is BONUS, not required
+- Mentioning score displays/UI: Completely ignore (no penalty, no credit)
+- FOCUS ONLY on: Did they answer situation/action/justification for the NEXT move?
+
+**IMPORTANT:**
+- DO NOT penalize for verbosity or response length
+- DO NOT criticize for "not mentioning X" unless X was explicitly required
+- FOCUS ONLY on: situation analysis quality, action specificity, justification clarity
 
 **Examples:**
-- "Move paddle up to intercept ball at y=126": 0.9+ (specific + analyzed)
-- "Move up - ball is above paddle": 0.85+ (specific + some analysis)
-- "Move paddle up or down to align": 0.2 (vague, no commitment)
-- "I see Pong with paddle and ball, align them": 0.15 (just description)
-
-**DO NOT give credit for:**
-- Generic game advice that applies to any frame
-- Hedging with "or" (up OR down, fire OR wait)
-- Just identifying objects without strategic recommendation
-- Vague advice like "position optimally", "be ready"
+✅ EXCELLENT (0.9+): "SITUATION: Ball is above paddle. ACTION: Move up. JUSTIFICATION: To intercept ball before it passes" (complete 3-part answer)
+✅ EXCELLENT (0.9+): "SITUATION: 36 invaders, projectile at x=310. ACTION: Move left. JUSTIFICATION: Avoid projectile trajectory" (complete answer)
+✅ GOOD (0.8+): "Ball is above the paddle. Move up to intercept it." (clear situation + action + implicit justification)
+✅ ACCEPTABLE (0.6): "Move paddle up. Ball is coming toward paddle." (some analysis, specific action)
+❌ VAGUE (0.2): "Move paddle up or down to align with ball" (hedging with "or")
+❌ DESCRIPTION ONLY (0.15): "I see Pong with paddle and ball, need to align them" (no specific action)
+❌ INVALID (0.0): "Jump over the ball" (invalid action for Pong)
 
 **This is a STRATEGY task - judge STRATEGIC THINKING, not object recognition.**
 
@@ -336,6 +359,11 @@ Both Vision-Only and Vision+Symbol have access to the same visual information to
 - Both are acceptable IF the information is CORRECT
 - Score LOW only for: wrong information, hallucinations, missing major elements
 - Score HIGH when: correct objects/relationships/actions identified, regardless of precision level
+
+**CRITICAL - For Visual Task:**
+- If VLM includes coordinates in visual task, DO NOT list as an issue
+- DO NOT say "Included coordinate data which wasn't requested"
+- Coordinates should be IGNORED, not penalized
 
 Return ONLY a JSON object with this exact format:
 {{

@@ -49,6 +49,7 @@ class AutomaticEvaluator:
         llm_provider: str = 'openai',
         llm_model: str = None,
         llm_api_key: str = None,
+        aws_region: str = None,
         semantic_model: str = None,
         force_llm_judge: bool = False,
         llm_judge_only: bool = False
@@ -62,6 +63,7 @@ class AutomaticEvaluator:
             llm_provider: LLM provider ('openai', 'anthropic', 'bedrock')
             llm_model: LLM model name (optional, uses default if not specified)
             llm_api_key: API key for LLM (optional, reads from env if not specified)
+            aws_region: AWS region for Bedrock (optional, defaults to us-east-1)
             semantic_model: Sentence transformer model name (optional)
             force_llm_judge: Always use LLM judge (for validation/testing)
             llm_judge_only: Use ONLY LLM judge, disable rule-based and semantic (LLM score = final score)
@@ -93,7 +95,8 @@ class AutomaticEvaluator:
             self.llm_judge = LLMJudge(
                 provider=llm_provider,
                 model=llm_model,
-                api_key=llm_api_key
+                api_key=llm_api_key,
+                aws_region=aws_region
             )
         else:
             self.llm_judge = None

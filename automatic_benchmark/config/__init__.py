@@ -38,11 +38,30 @@ COMPLEXITY_THRESHOLDS = {
     }
 }
 
-# Task Prompts (from Atari-GPT paper)
+# Task Prompts (Multi-Part for Comprehensive Evaluation)
 TASK_PROMPTS = {
-    'visual': "Identify all key elements in this image. Be specific. Use at most 100 words.",
-    'spatial': "Where are the key elements located relative to each other? Be specific with respect to their position in the image. Use at most 100 words.",
-    'strategy': "Describe the ideal next move if you were playing this game. Be specific. Use at most 100 words.",
+    'visual': """Analyze this game frame and provide:
+1. OBJECTS: List all objects present in the frame
+2. COUNTS: For each object type, state how many you see
+3. PROPERTIES: Describe key visual properties (colors, sizes, states)
+
+Format your answer clearly addressing all three parts.""",
+
+    'spatial': """Describe the spatial layout of this game frame:
+1. ABSOLUTE POSITIONS: Where is each object located? (top/middle/bottom, left/center/right)
+2. RELATIVE POSITIONS: What is the position of each object relative to others? (above/below, left/right)
+3. DISTANCES: Which objects are close together? Which are far apart?
+4. ALIGNMENT: Are any objects vertically or horizontally aligned?
+
+Be specific and address all four aspects.""",
+
+    'strategy': """Analyze the game state and recommend an action:
+1. SITUATION: What is the current game situation? Any threats or opportunities?
+2. ACTION: What specific action should the player take next?
+3. JUSTIFICATION: Why is this action optimal? What are you trying to achieve?
+
+Provide a clear answer for each part.""",
+
     'identification': "Identify the game name. Be specific."
 }
 
@@ -107,6 +126,53 @@ CONFIDENCE_INTERVAL = 0.95
 
 # Coordinate Validation
 COORDINATE_TOLERANCE_PIXELS = 20  # Allow this much error in coordinate mentions
+
+# Stricter Penalties for Multi-Part Evaluation
+STRICTER_PENALTIES = {
+    'visual': {
+        'missing_core_object': -0.4,      # Missing a core gameplay object
+        'wrong_count': -0.3,               # Per object type with wrong count
+        'hallucinated_object': -0.5,      # Mentioned object that doesn't exist
+        'missing_properties': -0.25,       # Didn't describe visual properties
+        'incomplete_answer': -0.3          # Skipped entire section (objects/counts/properties)
+    },
+    'spatial': {
+        'wrong_direction': -0.35,          # Said "left" when "right", "above" when "below"
+        'wrong_distance': -0.25,           # Said "near" when "far" or vice versa
+        'missed_relationship': -0.4,       # Completely missed key object relationship
+        'no_absolute_positions': -0.3,     # Didn't describe where objects are
+        'no_relative_positions': -0.35,    # Didn't describe object relationships
+        'incomplete_answer': -0.3          # Skipped entire section
+    },
+    'strategy': {
+        'invalid_action': -0.6,            # Suggested impossible action (auto-fail)
+        'suboptimal_action': -0.3,         # Valid but wrong action
+        'no_justification': -0.35,         # Didn't explain why
+        'no_situation_analysis': -0.3,     # Didn't analyze game state
+        'hedging': -0.4,                   # "Move up OR down" - indecisive
+        'incomplete_answer': -0.35         # Skipped entire section
+    }
+}
+
+# Multi-Part Scoring Weights
+MULTIPART_WEIGHTS = {
+    'visual': {
+        'objects': 0.40,      # 40% - Identifying what's present
+        'counts': 0.35,       # 35% - Counting accurately
+        'properties': 0.25    # 25% - Describing visual details
+    },
+    'spatial': {
+        'absolute_positions': 0.25,   # 25% - Where objects are on screen
+        'relative_positions': 0.35,   # 35% - Relationships between objects
+        'distances': 0.20,            # 20% - Near/far assessments
+        'alignment': 0.20             # 20% - Aligned objects
+    },
+    'strategy': {
+        'situation_analysis': 0.30,   # 30% - Understanding game state
+        'action': 0.40,               # 40% - Correct action choice
+        'justification': 0.30         # 30% - Reasoning quality
+    }
+}
 
 # Scoring Weights (within rule-based scorer)
 RULE_BASED_WEIGHTS = {

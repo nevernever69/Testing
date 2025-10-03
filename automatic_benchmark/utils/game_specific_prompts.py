@@ -53,6 +53,24 @@ def get_game_specific_visual_criteria(game_name: str) -> str:
 - **Formation-based evaluation**: Aliens move as a grid, columns get destroyed
 - This is the MOST COMPLEX game (many objects, dynamic formation)
 
+**STANDARD SPACE INVADERS SCREEN LAYOUT:**
+(Top to bottom structure - VLMs should recognize this typical layout)
+1. Score display at top (8-digit numbers)
+2. Alien formation/grid in upper-middle area (organized in rows and columns, originally 6 rows × 6 columns)
+3. Shields/barriers in lower-middle area (protective structures for player)
+4. Player ship at bottom
+
+**CRITICAL - Barriers/Shields location:**
+- Barriers/shields are ONLY at the bottom (lower-middle area, between aliens and player)
+- There are NO barriers at the top of the screen
+- If VLM says "barriers at top" or "barriers at y=60", they are incorrectly identifying the score display as barriers
+- This is a WRONG identification and should be penalized
+
+**Note on terminology - DO NOT penalize for:**
+- Using "shields" vs "barriers" for protective structures - both acceptable
+- Using "space invaders" vs "aliens" - both acceptable
+- The key is: did they identify the core game objects (player, aliens, shields)?
+
 **CRITICAL: Use Formation-Level Understanding**
 Instead of counting individual aliens, evaluate on FORMATION AWARENESS:
 

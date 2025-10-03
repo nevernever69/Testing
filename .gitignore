@@ -1,4 +1,6 @@
 *.pdf
+benchmark_results/
+paper_figures/
 inspection_test/
 test_with_ground_truth/
 experiments_1/

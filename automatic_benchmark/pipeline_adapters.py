@@ -256,7 +256,11 @@ class AdvancedGameAdapter(PipelineAdapter):
         self.provider = provider
         self.model_id = model_id
         self.openrouter_api_key = openrouter_api_key
-        self.detection_model = detection_model or "anthropic/claude-sonnet-4"
+        # Auto-select detection model based on provider
+        if detection_model is None:
+            self.detection_model = 'claude-4-sonnet' if provider == 'bedrock' else 'anthropic/claude-sonnet-4'
+        else:
+            self.detection_model = detection_model
         self.aws_region = aws_region
         self.game_type = game_type.lower()
 
@@ -294,8 +298,12 @@ class AdvancedGameAdapter(PipelineAdapter):
             if detector_class:
                 # Use Bedrock for detection if provider is Bedrock
                 if self.provider == 'bedrock':
-                    # Use Claude 4 Sonnet for detection
-                    bedrock_detection_model = self.detection_model if self.detection_model else 'claude-4-sonnet'
+                    # Use Claude 4 Sonnet for detection - use Bedrock model name format
+                    # If detection_model was set to OpenRouter format, convert it
+                    if self.detection_model and 'anthropic/claude-sonnet-4' in self.detection_model:
+                        bedrock_detection_model = 'claude-4-sonnet'
+                    else:
+                        bedrock_detection_model = self.detection_model if self.detection_model else 'claude-4-sonnet'
                     return detector_class(
                         openrouter_api_key=self.openrouter_api_key or 'dummy',  # Not used for Bedrock
                         model_name=bedrock_detection_model,
@@ -512,6 +520,7 @@ Answer concisely (under 100 words) using the coordinate data to support your ans
         # Call reasoning VLM with BOTH frame image and symbolic coordinates
         try:
             if self.provider == 'bedrock' and self.client:
+                print(f"  → Step 3: Reasoning with VLM (task: {task_type}) using {len(symbolic_state.get('objects', []))} detected objects...")
                 model_id = self.model_id or 'claude-4-sonnet'
 
                 # Prepare message content with image + text

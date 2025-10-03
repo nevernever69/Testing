@@ -144,7 +144,7 @@ class AdvancedSymbolicDetector:
         """
         Detects objects in a frame for a specified game.
         """
-        print(f"Step 2: Detecting objects for {game_name}...")
+        print(f"  → Step 2: Object detection with VLM (game: {game_name})...")
         base64_image = self.encode_image_to_base64(image_path)
 
         # Add game-specific instructions for better detection

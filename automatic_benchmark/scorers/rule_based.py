@@ -10,7 +10,9 @@ from ..config import (
     OBJECT_SYNONYMS,
     INVALID_ACTIONS,
     COORDINATE_TOLERANCE_PIXELS,
-    RULE_BASED_WEIGHTS
+    RULE_BASED_WEIGHTS,
+    STRICTER_PENALTIES,
+    MULTIPART_WEIGHTS
 )
 from ..utils.helpers import extract_coordinates, check_coordinate_accuracy
 
@@ -46,12 +48,14 @@ class RuleBasedScorer(BaseScorer):
         ground_truth: Dict[str, Any]
     ) -> ScoringResult:
         """
-        Score visual understanding (object detection).
+        Score visual understanding (object detection) with multi-part evaluation.
 
-        Scoring:
-        - Correctly identified objects: +points
-        - Hallucinated objects: -points
-        - Specificity (coordinates, colors): +bonus
+        Multi-part scoring:
+        - Part 1 (Objects 40%): Identify all objects present
+        - Part 2 (Counts 35%): Accurate counts for each object type
+        - Part 3 (Properties 25%): Describe visual properties
+
+        Stricter penalties applied for errors.
         """
         objects = self._extract_objects(ground_truth)
         response_lower = response.lower()
@@ -64,9 +68,14 @@ class RuleBasedScorer(BaseScorer):
                 details={'detected': 0, 'expected': len(objects), 'hallucinations': 0}
             )
 
-        # Count detected objects
+        # Multi-part weights
+        weights = MULTIPART_WEIGHTS['visual']
+        penalties = STRICTER_PENALTIES['visual']
+
+        # Part 1: Object Detection (40%)
         detected_count = 0
         detected_objects = []
+        core_objects = [obj for obj in objects if obj.get('tier') == 'core']
 
         for obj in objects:
             category = obj.get('category', '')
@@ -76,43 +85,63 @@ class RuleBasedScorer(BaseScorer):
                 detected_count += 1
                 detected_objects.append(category)
 
-        # Check for false positives (hallucinations)
+        # Calculate detection score with stricter penalties
+        objects_score = 0.0
+        if detected_count == len(objects):
+            objects_score = weights['objects']
+        else:
+            # Missing core objects penalty
+            missing_core = len([obj for obj in core_objects if obj['category'] not in detected_objects])
+            objects_score = weights['objects'] * (detected_count / len(objects))
+            objects_score += missing_core * penalties['missing_core_object']
+
+        # Part 2: Hallucinations (reduce from Part 1)
         hallucinations = self._count_hallucinations(response_lower, objects)
+        hallucination_penalty = hallucinations * penalties['hallucinated_object']
+        objects_score += hallucination_penalty
 
-        # Base score: detection rate
-        detection_rate = detected_count / len(objects) if objects else 0.5
-        hallucination_penalty = 0.5 * hallucinations / max(len(objects), 1)
+        # Part 3: Counts (35%) - Check if counts mentioned
+        counts_score = 0.0
+        if self._has_count_information(response_lower):
+            counts_score = weights['counts']
+        else:
+            counts_score = penalties['wrong_count']  # No counts = wrong counts
 
-        # Bonus for specificity (mentioning coordinates, colors)
-        specificity_bonus = self._calculate_specificity_bonus(response, objects)
+        # Part 4: Properties (25%) - Check if visual properties described
+        properties_score = 0.0
+        if self._has_visual_properties(response_lower):
+            properties_score = weights['properties']
+        else:
+            properties_score = penalties['missing_properties']
 
-        # Combine scores
-        weights = RULE_BASED_WEIGHTS['visual']
-        final_score = (
-            weights['object_detection'] * detection_rate -
-            weights['false_positive_penalty'] * hallucination_penalty +
-            weights['specificity_bonus'] * specificity_bonus
-        )
+        # Check for incomplete answer (skipped sections)
+        incomplete_penalty = 0.0
+        if len(response.split()) < 10:  # Very short response likely incomplete
+            incomplete_penalty = penalties['incomplete_answer']
 
+        # Combine all parts
+        final_score = objects_score + counts_score + properties_score + incomplete_penalty
         final_score = self._clamp_score(final_score)
 
         # Generate reasoning
-        reasoning = f"Detected {detected_count}/{len(objects)} objects"
+        reasoning = f"Objects: {detected_count}/{len(objects)}"
         if hallucinations > 0:
             reasoning += f", {hallucinations} hallucinations"
-        if specificity_bonus > 0:
-            reasoning += f", specificity bonus: {specificity_bonus:.2f}"
+        reasoning += f", Counts: {'✓' if counts_score > 0 else '✗'}"
+        reasoning += f", Properties: {'✓' if properties_score > 0 else '✗'}"
 
         return ScoringResult(
             score=final_score,
-            confidence=0.8,  # Rule-based has medium confidence
+            confidence=0.8,
             reasoning=reasoning,
             details={
                 'detected': detected_count,
                 'expected': len(objects),
                 'detected_objects': detected_objects,
                 'hallucinations': hallucinations,
-                'specificity_bonus': specificity_bonus
+                'objects_score': objects_score,
+                'counts_score': counts_score,
+                'properties_score': properties_score
             }
         )
 
@@ -180,18 +209,45 @@ class RuleBasedScorer(BaseScorer):
 
         return min(1.0, bonus)
 
+    def _has_count_information(self, response_lower: str) -> bool:
+        """Check if response mentions object counts."""
+        # Look for number words or digits followed by object terms
+        count_patterns = [
+            r'\d+\s+(object|paddle|ball|brick|alien|ship|bullet|shield)',
+            r'(one|two|three|four|five|six|seven|eight|nine|ten)\s+(object|paddle|ball|brick|alien|ship|bullet|shield)',
+            r'(multiple|several|many|few)\s+(object|paddle|ball|brick|alien|ship|bullet|shield)',
+            r'count',
+            r'how many',
+            r'number of'
+        ]
+        return any(re.search(pattern, response_lower) for pattern in count_patterns)
+
+    def _has_visual_properties(self, response_lower: str) -> bool:
+        """Check if response describes visual properties."""
+        # Look for color, size, shape, state descriptions
+        property_terms = [
+            'red', 'blue', 'green', 'white', 'orange', 'yellow', 'purple', 'black', 'color',
+            'large', 'small', 'big', 'tiny', 'wide', 'tall', 'size',
+            'square', 'rectangular', 'circular', 'round', 'shape',
+            'bright', 'dark', 'moving', 'static', 'flashing'
+        ]
+        return any(term in response_lower for term in property_terms)
+
     def _score_spatial(
         self,
         response: str,
         ground_truth: Dict[str, Any]
     ) -> ScoringResult:
         """
-        Score spatial reasoning (relative positions).
+        Score spatial reasoning with multi-part evaluation.
 
-        Scoring:
-        - Correct relative positions (left/right/above/below): 40%
-        - Coordinate accuracy: 30%
-        - Distance awareness: 30%
+        Multi-part scoring:
+        - Part 1 (Absolute Positions 25%): Where objects are on screen
+        - Part 2 (Relative Positions 35%): Object relationships
+        - Part 3 (Distances 20%): Near/far assessments
+        - Part 4 (Alignment 20%): Aligned objects
+
+        Stricter penalties applied for errors.
         """
         relationships = self._extract_spatial_relationships(ground_truth)
         objects = self._extract_objects(ground_truth)
@@ -204,38 +260,65 @@ class RuleBasedScorer(BaseScorer):
                 reasoning="No valid response provided"
             )
 
-        weights = RULE_BASED_WEIGHTS['spatial']
+        # Multi-part weights
+        weights = MULTIPART_WEIGHTS['spatial']
+        penalties = STRICTER_PENALTIES['spatial']
 
-        # 1. Relative position accuracy (40%)
-        relative_score = self._check_relative_positions(response_lower, relationships)
-
-        # 2. Coordinate accuracy (30%)
-        coords = extract_coordinates(response)
-        if coords:
-            coordinate_score = check_coordinate_accuracy(coords, objects, COORDINATE_TOLERANCE_PIXELS)
+        # Part 1: Absolute Positions (25%)
+        absolute_score = 0.0
+        if self._has_absolute_positions(response_lower):
+            absolute_score = weights['absolute_positions']
         else:
-            coordinate_score = 0.0
+            absolute_score = penalties['no_absolute_positions']
 
-        # 3. Distance awareness (30%)
-        distance_score = self._check_distance_awareness(response_lower, relationships)
+        # Part 2: Relative Positions (35%)
+        relative_score = 0.0
+        has_relative = self._has_relative_positions(response_lower)
+        if has_relative:
+            # Check if relationships are correct
+            correct_relationships = self._check_relative_positions(response_lower, relationships)
+            relative_score = weights['relative_positions'] * correct_relationships
 
-        # Combine with weights
-        final_score = (
-            weights['relative_position'] * relative_score +
-            weights['coordinate_accuracy'] * coordinate_score +
-            weights['distance_awareness'] * distance_score
-        )
+            # Apply penalty for wrong directions (detected separately)
+            wrong_directions = self._count_wrong_directions(response_lower, relationships)
+            relative_score += wrong_directions * penalties['wrong_direction']
+        else:
+            relative_score = penalties['no_relative_positions']
 
-        reasoning = f"Relative: {relative_score:.2f}, Coord: {coordinate_score:.2f}, Distance: {distance_score:.2f}"
+        # Part 3: Distances (20%)
+        distance_score = 0.0
+        if self._has_distance_information(response_lower):
+            distance_score = weights['distances']
+        else:
+            # No penalty for missing distance, but no points
+            distance_score = 0.0
+
+        # Part 4: Alignment (20%)
+        alignment_score = 0.0
+        if self._has_alignment_information(response_lower):
+            alignment_score = weights['alignment']
+        # No penalty for missing alignment
+
+        # Check for incomplete answer
+        incomplete_penalty = 0.0
+        if len(response.split()) < 15:  # Very short response
+            incomplete_penalty = penalties['incomplete_answer']
+
+        # Combine all parts
+        final_score = absolute_score + relative_score + distance_score + alignment_score + incomplete_penalty
+        final_score = self._clamp_score(final_score)
+
+        reasoning = f"Abs: {'✓' if absolute_score > 0 else '✗'}, Rel: {'✓' if relative_score > 0 else '✗'}, Dist: {'✓' if distance_score > 0 else '✗'}, Align: {'✓' if alignment_score > 0 else '✗'}"
 
         return ScoringResult(
-            score=self._clamp_score(final_score),
+            score=final_score,
             confidence=0.75,
             reasoning=reasoning,
             details={
-                'relative_position_score': relative_score,
-                'coordinate_score': coordinate_score,
-                'distance_score': distance_score
+                'absolute_score': absolute_score,
+                'relative_score': relative_score,
+                'distance_score': distance_score,
+                'alignment_score': alignment_score
             }
         )
 
@@ -309,6 +392,44 @@ class RuleBasedScorer(BaseScorer):
 
         return 0.0
 
+    def _has_absolute_positions(self, response_lower: str) -> bool:
+        """Check if response mentions absolute positions on screen."""
+        position_terms = [
+            'top', 'bottom', 'left', 'right', 'center', 'middle',
+            'upper', 'lower', 'side', 'corner', 'edge'
+        ]
+        return any(term in response_lower for term in position_terms)
+
+    def _has_relative_positions(self, response_lower: str) -> bool:
+        """Check if response mentions relative positions between objects."""
+        relative_terms = [
+            'above', 'below', 'left of', 'right of', 'between',
+            'next to', 'beside', 'near', 'close to', 'far from'
+        ]
+        return any(term in response_lower for term in relative_terms)
+
+    def _count_wrong_directions(self, response_lower: str, relationships: Dict[str, Any]) -> int:
+        """Count wrong directional claims (simplified heuristic)."""
+        # This is a simplified version - the LLM judge will do better
+        # For now, return 0 (no penalty from rule-based)
+        return 0
+
+    def _has_distance_information(self, response_lower: str) -> bool:
+        """Check if response mentions distance information."""
+        distance_terms = [
+            'near', 'far', 'close', 'distant', 'distance',
+            'apart', 'between', 'away from', 'pixels'
+        ]
+        return any(term in response_lower for term in distance_terms)
+
+    def _has_alignment_information(self, response_lower: str) -> bool:
+        """Check if response mentions alignment."""
+        alignment_terms = [
+            'aligned', 'vertical', 'horizontal', 'same line',
+            'same row', 'same column', 'in line'
+        ]
+        return any(term in response_lower for term in alignment_terms)
+
     def _score_strategy(
         self,
         response: str,
@@ -316,12 +437,14 @@ class RuleBasedScorer(BaseScorer):
         game_name: str
     ) -> ScoringResult:
         """
-        Score strategic reasoning (next action).
+        Score strategic reasoning with multi-part evaluation.
 
-        Scoring:
-        - Action validity: 30%
-        - Action optimality: 40%
-        - Justification: 30%
+        Multi-part scoring:
+        - Part 1 (Situation Analysis 30%): Did they analyze game state?
+        - Part 2 (Action 40%): Did they give specific action?
+        - Part 3 (Justification 30%): Did they explain why?
+
+        Stricter penalties applied for errors.
         """
         response_lower = response.lower()
 
@@ -332,7 +455,11 @@ class RuleBasedScorer(BaseScorer):
                 reasoning="No valid response provided"
             )
 
-        # Check for invalid actions first
+        # Multi-part weights
+        weights = MULTIPART_WEIGHTS['strategy']
+        penalties = STRICTER_PENALTIES['strategy']
+
+        # Check for invalid actions first (AUTO-FAIL)
         invalid_actions = INVALID_ACTIONS.get(game_name, [])
         for invalid in invalid_actions:
             if invalid in response_lower:
@@ -343,54 +470,70 @@ class RuleBasedScorer(BaseScorer):
                     details={'invalid_action': invalid}
                 )
 
-        # Calculate optimal action
-        optimal_action = self._calculate_optimal_action(ground_truth, game_name)
+        # Part 1: Situation Analysis (30%)
+        situation_score = 0.0
+        if self._has_situation_analysis(response_lower):
+            situation_score = weights['situation_analysis']
+        else:
+            situation_score = penalties['no_situation_analysis']
 
-        weights = RULE_BASED_WEIGHTS['strategy']
-
-        # Check if mentions valid action
+        # Part 2: Action (40%)
+        action_score = 0.0
         action_space = self._extract_action_space(ground_truth)
         valid_actions = [a.lower() for a in action_space.get('actions', [])]
 
-        action_validity_score = 0.0
         mentioned_action = None
         for action in valid_actions:
             if action.lower() in response_lower:
-                action_validity_score = 1.0
                 mentioned_action = action
                 break
 
-        # Check optimality
-        if optimal_action and mentioned_action:
-            if optimal_action.lower() in mentioned_action.lower():
-                optimality_score = 1.0
+        if mentioned_action:
+            # Check if optimal
+            optimal_action = self._calculate_optimal_action(ground_truth, game_name)
+            if optimal_action and optimal_action.lower() in mentioned_action.lower():
+                action_score = weights['action']  # Optimal
             else:
-                optimality_score = 0.6  # Valid but not optimal
+                action_score = 0.15  # Suboptimal but valid
+                action_score += penalties['suboptimal_action']
         else:
-            optimality_score = 0.3  # Has some strategy mentioned
+            # No specific action mentioned
+            action_score = penalties['no_justification']
 
-        # Check justification quality
-        justification_score = self._check_justification(response_lower)
+        # Check for hedging ("move up or down")
+        hedging_penalty = 0.0
+        if ' or ' in response_lower:
+            hedging_penalty = penalties['hedging']
 
-        # Combine scores
-        final_score = (
-            weights['action_validity'] * action_validity_score +
-            weights['action_optimality'] * optimality_score +
-            weights['justification'] * justification_score
-        )
+        # Part 3: Justification (30%)
+        justification_score = 0.0
+        if self._has_justification(response_lower):
+            justification_score = weights['justification']
+        else:
+            justification_score = penalties['no_justification']
 
-        reasoning = f"Validity: {action_validity_score:.2f}, Optimality: {optimality_score:.2f}, Justification: {justification_score:.2f}"
+        # Check for incomplete answer
+        incomplete_penalty = 0.0
+        if len(response.split()) < 10:  # Very short response
+            incomplete_penalty = penalties['incomplete_answer']
+
+        # Combine all parts
+        final_score = situation_score + action_score + justification_score + hedging_penalty + incomplete_penalty
+        final_score = self._clamp_score(final_score)
+
+        reasoning = f"Situation: {'✓' if situation_score > 0 else '✗'}, Action: {'✓' if mentioned_action else '✗'}, Justif: {'✓' if justification_score > 0 else '✗'}"
+        if hedging_penalty < 0:
+            reasoning += ", Hedging detected"
 
         return ScoringResult(
-            score=self._clamp_score(final_score),
-            confidence=0.6,  # Lower confidence for strategy (hard to validate automatically)
+            score=final_score,
+            confidence=0.6,
             reasoning=reasoning,
             details={
-                'optimal_action': optimal_action,
-                'mentioned_action': mentioned_action,
-                'validity_score': action_validity_score,
-                'optimality_score': optimality_score,
-                'justification_score': justification_score
+                'situation_score': situation_score,
+                'action_score': action_score,
+                'justification_score': justification_score,
+                'mentioned_action': mentioned_action
             }
         )
 
@@ -433,6 +576,26 @@ class RuleBasedScorer(BaseScorer):
                 score += 0.2
 
         return min(1.0, score)
+
+    def _has_situation_analysis(self, response_lower: str) -> bool:
+        """Check if response analyzes the current game situation."""
+        analysis_terms = [
+            'situation', 'state', 'position', 'threat', 'opportunity',
+            'coming', 'moving', 'approaching', 'heading', 'trajectory',
+            'above', 'below', 'near', 'far', 'close'
+        ]
+        # Require at least 2 analysis terms for a real situation analysis
+        count = sum(1 for term in analysis_terms if term in response_lower)
+        return count >= 2
+
+    def _has_justification(self, response_lower: str) -> bool:
+        """Check if response includes justification for action."""
+        justification_terms = [
+            'because', 'since', 'to', 'in order to', 'so that',
+            'intercept', 'avoid', 'prevent', 'hit', 'catch',
+            'defend', 'attack', 'score', 'win', 'survive'
+        ]
+        return any(term in response_lower for term in justification_terms)
 
     def _score_identification(
         self,

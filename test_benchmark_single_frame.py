@@ -333,7 +333,7 @@ def test_single_frame(
 
 def main():
     parser = argparse.ArgumentParser(description='Test benchmark with single frame')
-    parser.add_argument('--dataset', type=str, default='./benchmark_v2.1',
+    parser.add_argument('--dataset', type=str, default='./benchmark_v2.0_scenarios',
                        help='Path to benchmark dataset')
     parser.add_argument('--frame_id', type=str, default=None,
                        help='Specific frame to test (default: first frame)')

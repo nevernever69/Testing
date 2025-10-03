@@ -24,12 +24,13 @@ import numpy as np
 from automatic_benchmark import AutomaticEvaluator, BenchmarkDatasetLoader
 from automatic_benchmark.pipeline_adapters import DirectFrameAdapter, AdvancedGameAdapter
 from automatic_benchmark.utils import get_all_prompts
+from automatic_benchmark.utils.detailed_logger import DetailedBenchmarkLogger
 
 
 class BenchmarkRunner:
     """Runs benchmark evaluation on pipelines."""
 
-    def __init__(self, dataset_path: str, output_dir: str, evaluator: AutomaticEvaluator):
+    def __init__(self, dataset_path: str, output_dir: str, evaluator: AutomaticEvaluator, enable_detailed_logging: bool = True):
         self.dataset_path = Path(dataset_path)
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -37,15 +38,24 @@ class BenchmarkRunner:
         self.loader = BenchmarkDatasetLoader(dataset_path)
         self.evaluator = evaluator
 
+        # Initialize detailed logger
+        self.detailed_logging = enable_detailed_logging
+        if self.detailed_logging:
+            self.logger = DetailedBenchmarkLogger(str(self.output_dir / "detailed_logs"))
+        else:
+            self.logger = None
+
         print(f"\n{'='*70}")
         print(f"Benchmark Runner Initialized")
         print(f"{'='*70}")
         print(f"Dataset: {dataset_path}")
         print(f"Total frames: {len(self.loader)}")
         print(f"Output: {output_dir}")
+        if self.detailed_logging:
+            print(f"Detailed logging: {self.logger.get_session_dir()}")
         print(f"{'='*70}\n")
 
-    def run_single_pipeline(self, pipeline, pipeline_name: str) -> dict:
+    def run_single_pipeline(self, pipeline, pipeline_name: str, limit: int = None) -> dict:
         """
         Run benchmark on a single pipeline.
 
@@ -73,6 +83,11 @@ class BenchmarkRunner:
 
         # Get all frames
         frames = self.loader.get_frames()
+
+        # Limit frames if specified
+        if limit is not None:
+            frames = frames[:limit]
+            print(f"⚠️  Limited to {limit} frames for testing\n")
 
         # Evaluate each frame
         for frame_data in tqdm(frames, desc=f"Evaluating {pipeline_name}"):
@@ -121,6 +136,40 @@ class BenchmarkRunner:
                         'combination_method': eval_result.combination_method
                     }
 
+                    # Detailed logging
+                    if self.detailed_logging and self.logger:
+                        # Get LLM judge details if available
+                        llm_judge_prompt = None
+                        llm_judge_response = None
+                        if eval_result.llm_judge_result and 'details' in eval_result.llm_judge_result:
+                            llm_judge_prompt = eval_result.llm_judge_result['details'].get('judge_prompt')
+                            judge_raw = eval_result.llm_judge_result['details'].get('judge_raw_response')
+                            if judge_raw:
+                                llm_judge_response = json.dumps(judge_raw, indent=2)
+
+                        # Get actual prompt and detection results (for Vision+Symbol)
+                        actual_prompt = prompt
+                        detection_results = None
+                        if hasattr(pipeline, 'get_actual_prompt'):
+                            actual_prompt = pipeline.get_actual_prompt()
+                        if hasattr(pipeline, 'get_detection_results'):
+                            detection_results = pipeline.get_detection_results()
+
+                        # Log complete evaluation
+                        self.logger.log_evaluation(
+                            frame_id=frame_id,
+                            pipeline=pipeline_name,
+                            task_type=task_type,
+                            task_prompt=actual_prompt,
+                            vlm_response=response,
+                            ground_truth=ground_truth,
+                            eval_result=eval_result,
+                            llm_judge_prompt=llm_judge_prompt,
+                            llm_judge_response=llm_judge_response,
+                            frame=frame,
+                            detection_results=detection_results
+                        )
+
                     print(f"  {frame_id} - {task_type}: {eval_result.final_score:.3f}")
 
                 except Exception as e:
@@ -142,13 +191,17 @@ class BenchmarkRunner:
         results['evaluator_stats'] = self.evaluator.get_statistics()
 
         # Save results
-        results_file = self.output_dir / f"{pipeline_name.lower().replace(' ', '_').replace('+', '_')}_results.json"
+        results_file = self.output_dir / f"{pipeline_name.lower().replace(' ', '_').replace('+', '_').replace('-', '_')}_results.json"
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2)
 
         print(f"\n{'='*70}")
         print(f"Results saved: {results_file}")
         print(f"{'='*70}\n")
+
+        # Save detailed logs summary
+        if self.detailed_logging and self.logger:
+            self.logger.save_summary()
 
         # Print summary
         self._print_summary(results)
@@ -377,31 +430,44 @@ def main():
                        help='AWS region for Bedrock')
     parser.add_argument('--openrouter_key', type=str, default=None,
                        help='OpenRouter API key for detection model')
-    parser.add_argument('--detection_model', type=str, default='anthropic/claude-sonnet-4',
-                       help='Detection model for vision+symbol pipeline')
+    parser.add_argument('--detection_model', type=str, default=None,
+                       help='Detection model for vision+symbol pipeline (auto-selects based on provider)')
     parser.add_argument('--game_type', type=str, default='pong',
                        choices=['pong', 'breakout', 'space_invaders'],
                        help='Game type for detector')
     parser.add_argument('--use_llm_judge', action='store_true',
                        help='Enable LLM-as-judge scoring')
-    parser.add_argument('--llm_judge_provider', type=str, default='openai',
+    parser.add_argument('--llm_judge_only', action='store_true',
+                       help='Use ONLY LLM judge for scoring (disables rule-based and semantic scoring)')
+    parser.add_argument('--llm_judge_provider', type=str, default=None,
                        choices=['openai', 'anthropic', 'bedrock'],
-                       help='Provider for LLM judge')
+                       help='Provider for LLM judge (defaults to same as --provider)')
+    parser.add_argument('--disable_detailed_logs', action='store_true',
+                       help='Disable detailed logging (saves disk space)')
+    parser.add_argument('--limit', type=int, default=None,
+                       help='Limit number of frames to evaluate (for testing)')
 
     args = parser.parse_args()
+
+    # If llm_judge_provider not specified, use same provider as main pipeline
+    if args.llm_judge_provider is None:
+        args.llm_judge_provider = args.provider
 
     # Initialize evaluator
     evaluator = AutomaticEvaluator(
         use_semantic=True,
-        use_llm_judge=args.use_llm_judge,
-        llm_provider=args.llm_judge_provider if args.use_llm_judge else None
+        use_llm_judge=args.use_llm_judge or args.llm_judge_only,
+        llm_provider=args.llm_judge_provider if (args.use_llm_judge or args.llm_judge_only) else None,
+        aws_region=args.aws_region,
+        llm_judge_only=args.llm_judge_only
     )
 
     # Initialize runner
     runner = BenchmarkRunner(
         dataset_path=args.dataset,
         output_dir=args.output,
-        evaluator=evaluator
+        evaluator=evaluator,
+        enable_detailed_logging=not args.disable_detailed_logs
     )
 
     # Run benchmark(s)
@@ -416,7 +482,7 @@ def main():
             aws_region=args.aws_region
         )
 
-        vision_only_results = runner.run_single_pipeline(vision_only, 'Vision-Only')
+        vision_only_results = runner.run_single_pipeline(vision_only, 'Vision-Only', limit=args.limit)
 
     if args.pipeline in ['vision_symbol', 'both']:
         print("\n" + "="*70)
@@ -432,7 +498,7 @@ def main():
             game_type=args.game_type
         )
 
-        vision_symbol_results = runner.run_single_pipeline(vision_symbol, 'Vision+Symbol')
+        vision_symbol_results = runner.run_single_pipeline(vision_symbol, 'Vision+Symbol', limit=args.limit)
 
     # Compare if both were run
     if args.pipeline == 'both':

@@ -67,9 +67,12 @@ class OCAtariGroundTruth:
         self.object_history = []
         self.frame_count = 0
 
-    def reset(self) -> Tuple[np.ndarray, Dict[str, Any]]:
+    def reset(self, seed=None, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Reset environment and return initial observation."""
-        obs, info = self.env.reset()
+        if seed is not None:
+            obs, info = self.env.reset(seed=seed, **kwargs)
+        else:
+            obs, info = self.env.reset(**kwargs)
         self.object_history = []
         self.frame_count = 0
         return obs, info
