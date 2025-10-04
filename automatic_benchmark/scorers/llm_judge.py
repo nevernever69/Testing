@@ -129,12 +129,11 @@ class LLMJudge(BaseScorer):
             else:
                 raise ValueError(f"Unknown provider: {self.provider}")
 
-            # Parse result
+            # Parse result - LLM provides the final score
             score = float(result.get('score', 0.5))
             reasoning = result.get('reasoning', 'No reasoning provided')
             issues = result.get('identified_issues', [])
             strengths = result.get('strengths', [])
-            score_breakdown = result.get('score_breakdown', {})
 
             return ScoringResult(
                 score=self._clamp_score(score),
@@ -143,7 +142,6 @@ class LLMJudge(BaseScorer):
                 details={
                     'identified_issues': issues,
                     'strengths': strengths,
-                    'score_breakdown': score_breakdown,  # Detailed breakdown for manual verification
                     'llm_provider': self.provider,
                     'llm_model': self.model,
                     'judge_prompt': prompt,  # Save for logging

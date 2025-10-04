@@ -458,7 +458,10 @@ class ScenarioBasedDatasetCreator:
     def _breakout_paddle_zone(self, objects: List[Dict], zone: str) -> bool:
         """Paddle in specific horizontal zone (left/center/right)."""
         player = next((o for o in objects if 'player' in o['category'].lower()), None)
-        if not player:
+        ball = next((o for o in objects if o['category'] == 'Ball'), None)
+
+        # IMPORTANT: Require ball to be present in ALL Breakout frames
+        if not player or not ball:
             return False
 
         x = player['position'][0]
@@ -474,6 +477,11 @@ class ScenarioBasedDatasetCreator:
     def _breakout_brick_count(self, objects: List[Dict], count_type: str) -> bool:
         """Check brick count (many/few)."""
         bricks = [o for o in objects if 'brick' in o['category'].lower() or 'block' in o['category'].lower()]
+        ball = next((o for o in objects if o['category'] == 'Ball'), None)
+
+        # IMPORTANT: Require ball to be present in ALL Breakout frames
+        if not ball:
+            return False
 
         if count_type == 'many':
             # OCAtari detects BlockRows, not individual bricks
@@ -1189,6 +1197,13 @@ class ScenarioBasedDatasetCreator:
         # Resize frame to target resolution (1280x720)
         # OCAtari returns frames in (210, 160, 3), we need to upscale
         frame = frame_data['frame']
+
+        # Validate frame before resizing
+        if frame is None:
+            raise ValueError(f"Frame is None for scenario {scenario_name}")
+        if frame.size == 0 or frame.shape[0] == 0 or frame.shape[1] == 0:
+            raise ValueError(f"Frame has invalid shape {frame.shape} for scenario {scenario_name}")
+
         target_resolution = (1280, 720)
         frame_resized = cv2.resize(frame, target_resolution, interpolation=cv2.INTER_NEAREST)
 

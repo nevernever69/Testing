@@ -1,3 +1,6 @@
+breakout_results/
+detailed_reports/
+
 *.pdf
 benchmark_results/
 paper_figures/

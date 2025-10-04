@@ -148,9 +148,24 @@ class AdvancedSymbolicDetector:
         base64_image = self.encode_image_to_base64(image_path)
 
         # Add game-specific instructions for better detection
-        game_specific_info = ""
+        game_specific_info = """
+
+Before detecting objects, follow these steps:
+1. First, visually identify what game this is based on the gameplay elements and visual style
+2. Based on your knowledge of this game, recall what objects typically exist (e.g., paddles, balls, bricks, enemies)
+3. Determine how many of each object type should reasonably be present in a typical frame
+4. Now, carefully verify visually which of those expected objects are actually present in THIS specific frame
+5. Only report objects that you can clearly see AND that match the expected object types for this game
+
+This ensures your detections are grounded in both visual evidence and game knowledge."""
+
+        # Game-specific can be expanded here if needed
         if game_name.lower() == "breakout":
-            game_specific_info = "\n\nIMPORTANT: You are controlling the orange paddle at the bottom of the screen. Pay special attention to detecting the orange paddle which you control."
+            pass  # Using default knowledge-grounded instructions
+        elif game_name.lower() == "pong":
+            pass  # Using default knowledge-grounded instructions
+        elif game_name.lower() in ["space invaders", "spaceinvaders"]:
+            pass  # Using default knowledge-grounded instructions
 
         prompt = f"""You are an expert game frame analyzer for the game {game_name}.{game_specific_info}
 

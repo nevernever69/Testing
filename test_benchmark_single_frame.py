@@ -26,7 +26,8 @@ def test_single_frame(
     aws_region: str = 'us-east-1',
     use_llm_judge: bool = False,
     force_llm_judge: bool = False,
-    llm_judge_only: bool = False
+    llm_judge_only: bool = False,
+    model: str = None
 ):
     """
     Test benchmark with a single frame.
@@ -40,6 +41,7 @@ def test_single_frame(
         use_llm_judge: Enable LLM-as-judge scoring
         force_llm_judge: Force LLM judge on ALL evaluations
         llm_judge_only: Use ONLY LLM judge (disable rule-based and semantic)
+        model: Model ID to use (e.g., 'claude-4.5-sonnet')
     """
     print(f"\n{'='*70}")
     print(f"Testing Benchmark System with Single Frame")
@@ -89,7 +91,9 @@ def test_single_frame(
         use_llm_judge=use_llm_judge,
         force_llm_judge=force_llm_judge,
         llm_judge_only=llm_judge_only,
-        llm_provider='bedrock' if use_llm_judge or llm_judge_only else None
+        llm_provider='bedrock' if use_llm_judge or llm_judge_only else None,
+        llm_model=model,
+        aws_region=aws_region
     )
 
     # Debug info
@@ -115,7 +119,7 @@ def test_single_frame(
     try:
         vision_only = DirectFrameAdapter(
             provider=provider,
-            model_id=None,
+            model_id=model,
             aws_region=aws_region
         )
 
@@ -156,7 +160,7 @@ def test_single_frame(
             # Log detailed evaluation
             llm_judge_prompt = None
             llm_judge_response = None
-            if eval_result.llm_judge_result and 'details' in eval_result.llm_judge_result:
+            if eval_result.llm_judge_result and 'details' in eval_result.llm_judge_result and eval_result.llm_judge_result['details']:
                 llm_judge_prompt = eval_result.llm_judge_result['details'].get('judge_prompt')
                 judge_raw = eval_result.llm_judge_result['details'].get('judge_raw_response')
                 if judge_raw:
@@ -203,13 +207,13 @@ def test_single_frame(
     try:
         # Use appropriate detection model based on provider
         if provider == 'bedrock':
-            detection_model = 'claude-4-sonnet'  # Bedrock Claude 4 Sonnet
+            detection_model = model if model else 'claude-4-sonnet'  # Use specified model or default to Claude 4 Sonnet
         else:
             detection_model = openrouter_key and 'anthropic/claude-sonnet-4' or None
 
         vision_symbol = AdvancedGameAdapter(
             provider=provider,
-            model_id=None,
+            model_id=model,
             openrouter_api_key=openrouter_key,
             detection_model=detection_model,
             aws_region=aws_region,
@@ -253,7 +257,7 @@ def test_single_frame(
             # Log detailed evaluation
             llm_judge_prompt = None
             llm_judge_response = None
-            if eval_result.llm_judge_result and 'details' in eval_result.llm_judge_result:
+            if eval_result.llm_judge_result and 'details' in eval_result.llm_judge_result and eval_result.llm_judge_result['details']:
                 llm_judge_prompt = eval_result.llm_judge_result['details'].get('judge_prompt')
                 judge_raw = eval_result.llm_judge_result['details'].get('judge_raw_response')
                 if judge_raw:
@@ -349,6 +353,8 @@ def main():
                        help='Force LLM judge on ALL evaluations (expensive, use for detailed analysis)')
     parser.add_argument('--llm_judge_only', action='store_true',
                        help='Use ONLY LLM judge (disable rule-based and semantic scoring)')
+    parser.add_argument('--model', type=str, default=None,
+                       help='Model ID to use (e.g., claude-4.5-sonnet, claude-4-sonnet)')
 
     args = parser.parse_args()
 
@@ -360,7 +366,8 @@ def main():
         aws_region=args.aws_region,
         use_llm_judge=args.use_llm_judge,
         force_llm_judge=args.force_llm_judge,
-        llm_judge_only=args.llm_judge_only
+        llm_judge_only=args.llm_judge_only,
+        model=args.model
     )
 
 

@@ -134,6 +134,13 @@ class BedrockUnifiedClient:
                 type=ModelType.VISION,
                 max_tokens=8192
             ),
+            # Claude Sonnet 4.5
+            "claude-4.5-sonnet": ModelConfig(
+                id="arn:aws:bedrock:us-east-1:734908905761:inference-profile/us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                name="Claude 4.5 Sonnet",
+                type=ModelType.VISION,
+                max_tokens=8192
+            ),
             # Claude Opus 4 Models
             "claude-4-opus": ModelConfig(
                 id="arn:aws:bedrock:us-east-1:734908905761:inference-profile/us.anthropic.claude-opus-4-20250514-v1:0",
@@ -213,7 +220,7 @@ class BedrockUnifiedClient:
         model: str,
         messages: List[Dict[str, Any]],
         max_tokens: Optional[int] = None,
-        temperature: float = 0.7,
+        temperature: float = 0,
         top_p: float = 0.9,
         system: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -270,11 +277,16 @@ class BedrockUnifiedClient:
                 })
         
         # Prepare system message for inference config
+        # Claude 4.5+ models don't support both temperature and topP
         inference_config = {
             "maxTokens": max_tokens,
-            "temperature": temperature,
-            "topP": top_p
+            "temperature": temperature
         }
+
+        # Only add topP for models that support both parameters
+        # Claude 4.5 and newer models don't support specifying both
+        if "claude-sonnet-4-5" not in model_config.id:
+            inference_config["topP"] = top_p
         
         # Use system message in system parameter if supported
         converse_params = {
@@ -346,7 +358,7 @@ class BedrockUnifiedClient:
         image_path: str,
         text: str,
         max_tokens: Optional[int] = None,
-        temperature: float = 0.7
+        temperature: float = 0
     ) -> str:
         """
         Simplified vision chat method

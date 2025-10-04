@@ -474,6 +474,7 @@ def main():
         use_semantic=True,
         use_llm_judge=args.use_llm_judge or args.llm_judge_only,
         llm_provider=args.llm_judge_provider if (args.use_llm_judge or args.llm_judge_only) else None,
+        llm_model=args.model,
         aws_region=args.aws_region,
         llm_judge_only=args.llm_judge_only
     )
