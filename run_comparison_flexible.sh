@@ -1,64 +1,85 @@
 #!/bin/bash
-# Run Vision-Only vs Vision+Symbol comparison with proper resumption
-# Usage: ./run_comparison_v2.sh <provider> <model> [game] [num_frames] <seed1> <seed2> <seed3>...
-#
-# IMPORTANT: Seeds are MANDATORY! You must specify at least one seed.
+# Run Vision-Only vs Vision+Symbol comparison with flexible argument parsing
+# Usage: ./run_comparison_flexible.sh <provider> <model> [game] <seed1> [seed2] [seed3]...
 #
 # Examples:
-#   ./run_comparison_v2.sh bedrock claude-4.5-sonnet pong 600 42 123 456
-#   ./run_comparison_v2.sh openrouter "anthropic/claude-sonnet-4" breakout 600 42 123
-#   ./run_comparison_v2.sh bedrock claude-4.5-sonnet pong 600 42
+#   ./run_comparison_flexible.sh bedrock claude-4.5-sonnet 42
+#   ./run_comparison_flexible.sh bedrock claude-4.5-sonnet pong 42
+#   ./run_comparison_flexible.sh bedrock claude-4.5-sonnet 42 123 456
+#   ./run_comparison_flexible.sh openrouter "google/gemini-2.5-pro" pong 42 123
+#   NUM_FRAMES=20 ./run_comparison_flexible.sh openrouter "google/gemini-2.5-pro" pong 42
 
-set -e  # Exit on error (will stop if API fails)
+set -e  # Exit on error
 
-# Check minimum arguments
+# Usage check
 if [ $# -lt 3 ]; then
     echo "ERROR: Not enough arguments!"
     echo ""
-    echo "Usage: $0 <provider> <model> [game] [num_frames] <seed1> [seed2] [seed3]..."
+    echo "Usage: $0 <provider> <model> [game] <seed1> [seed2] [seed3]..."
     echo ""
     echo "Examples:"
-    echo "  $0 bedrock claude-4.5-sonnet pong 600 42 123 456"
-    echo "  $0 openrouter \"anthropic/claude-sonnet-4\" breakout 600 42 123"
-    echo "  $0 bedrock claude-4.5-sonnet pong 600 42"
+    echo "  $0 bedrock claude-4.5-sonnet 42"
+    echo "  $0 bedrock claude-4.5-sonnet pong 42"
+    echo "  $0 bedrock claude-4.5-sonnet pong 42 123 456"
+    echo "  $0 openrouter \"anthropic/claude-sonnet-4\" breakout 42 123"
     echo ""
-    echo "IMPORTANT: At least one seed is REQUIRED!"
+    echo "Optional environment variables:"
+    echo "  NUM_FRAMES (default: 600)"
+    echo ""
     exit 1
 fi
 
-# Required arguments
+# Parse arguments
 PROVIDER="$1"
 MODEL_ID="$2"
-
-# Parse optional game and frames, then seeds
 shift 2
 
-# Default game and frames if not a number (seed)
-GAME_TYPE="pong"
-NUM_FRAMES=600
+# Check if third argument is a game name or seed
+KNOWN_GAMES=("pong" "breakout" "space_invaders" "spaceinvaders")
+GAME_TYPE="${GAME_TYPE:-pong}"  # Default
 
-# Check if next arg is a valid game name
-if [[ "$1" =~ ^(pong|breakout|space_invaders|spaceinvaders)$ ]]; then
-    GAME_TYPE="$1"
-    shift
+if [ $# -gt 0 ]; then
+    # Check if first remaining arg is a known game
+    if [[ " ${KNOWN_GAMES[@]} " =~ " $1 " ]]; then
+        GAME_TYPE="$1"
+        shift
+    fi
 fi
 
-# Check if next arg is a number (num_frames)
-if [[ "$1" =~ ^[0-9]+$ ]]; then
-    NUM_FRAMES="$1"
-    shift
-fi
+# All remaining arguments are seeds
+SEEDS=("$@")
 
-# Remaining arguments are seeds (REQUIRED)
-if [ $# -eq 0 ]; then
-    echo "ERROR: No seeds specified!"
-    echo "You must specify at least one seed."
+# Validate we have at least one seed
+if [ ${#SEEDS[@]} -eq 0 ]; then
+    echo "ERROR: At least one seed is required!"
     echo ""
-    echo "Example: $0 bedrock claude-4.5-sonnet pong 600 42 123 456"
+    echo "Examples:"
+    echo "  $0 $PROVIDER $MODEL_ID 42"
+    echo "  $0 $PROVIDER $MODEL_ID $GAME_TYPE 42 123"
     exit 1
 fi
 
-SEEDS=("$@")
+# Optional environment variables with defaults
+NUM_FRAMES="${NUM_FRAMES:-600}"
+
+echo "======================================================================="
+echo "GAMEPLAY COMPARISON SCRIPT"
+echo "======================================================================="
+echo "Provider:   $PROVIDER"
+echo "Model:      $MODEL_ID"
+echo "Game:       $GAME_TYPE"
+echo "Frames:     $NUM_FRAMES"
+echo "Seeds:      ${SEEDS[@]}"
+echo "======================================================================="
+echo ""
+
+# Validate seeds
+for seed in "${SEEDS[@]}"; do
+    if ! [[ "$seed" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Invalid seed '$seed' - must be a number!"
+        exit 1
+    fi
+done
 
 # Set environment based on game type
 case "$GAME_TYPE" in
@@ -89,31 +110,18 @@ if [ "$PROVIDER" == "openrouter" ]; then
         echo "Please run: export OPENROUTER_API_KEY='your-key-here'"
         exit 1
     fi
-    # Save API key to file
     echo "$OPENROUTER_API_KEY" > OPENROUTER_API_KEY.txt
     API_KEY="$OPENROUTER_API_KEY"
 elif [ "$PROVIDER" == "bedrock" ]; then
-    # Bedrock uses AWS credentials
     API_KEY=""
     AWS_REGION="${AWS_REGION:-us-east-1}"
-    # Create empty file (some scripts check for existence)
     touch OPENROUTER_API_KEY.txt
+    echo "Using AWS Bedrock (Region: $AWS_REGION)"
 else
     echo "ERROR: Unsupported provider: $PROVIDER"
     echo "Supported: openrouter, bedrock"
     exit 1
 fi
-
-echo "======================================================================="
-echo "GAMEPLAY COMPARISON: Vision-Only vs Vision+Symbol"
-echo "======================================================================="
-echo "Provider: $PROVIDER"
-echo "Model: $MODEL_ID"
-echo "Game: $GAME ($GAME_TYPE)"
-echo "Frames per run: $NUM_FRAMES"
-echo "Seeds: ${SEEDS[@]}"
-echo "======================================================================="
-echo ""
 
 # Create output directory
 mkdir -p ./comparison_results
@@ -143,15 +151,20 @@ mark_complete() {
 run_vision_only() {
     local seed=$1
 
-    if is_complete "vision_only" $seed; then
-        echo "⏭️  Vision-Only Seed $seed already complete (skipping)"
+    echo ""
+    echo "======================================================================="
+    echo "VISION-ONLY - Seed $seed"
+    echo "======================================================================="
+
+    if is_complete "vision_only" "$seed"; then
+        echo "⏭️  Already complete (skipping)"
+        local result=$(tail -1 "./comparison_results/vision_only_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        echo "   Final Score: $result"
         return 0
     fi
 
+    echo "Starting Vision-Only gameplay for seed $seed..."
     echo ""
-    echo "======================================================================="
-    echo "Running: Vision-Only - Seed $seed"
-    echo "======================================================================="
 
     if [ "$PROVIDER" == "openrouter" ]; then
         python direct_frame_runner.py \
@@ -175,11 +188,12 @@ run_vision_only() {
           --output_dir "./comparison_results/vision_only_seed${seed}/"
     fi
 
-    # Mark as complete only if successful
-    mark_complete "vision_only" $seed
+    # Mark as complete
+    mark_complete "vision_only" "$seed"
 
     # Show result
-    result=$(tail -1 "./comparison_results/vision_only_seed${seed}/${GAME}_"*/Results/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    local result=$(tail -1 "./comparison_results/vision_only_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    echo ""
     echo "✅ Vision-Only Seed $seed complete - Final Score: $result"
 }
 
@@ -187,15 +201,20 @@ run_vision_only() {
 run_vision_symbol() {
     local seed=$1
 
-    if is_complete "vision_symbol" $seed; then
-        echo "⏭️  Vision+Symbol Seed $seed already complete (skipping)"
+    echo ""
+    echo "======================================================================="
+    echo "VISION+SYMBOL - Seed $seed"
+    echo "======================================================================="
+
+    if is_complete "vision_symbol" "$seed"; then
+        echo "⏭️  Already complete (skipping)"
+        local result=$(tail -1 "./comparison_results/vision_symbol_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        echo "   Final Score: $result"
         return 0
     fi
 
+    echo "Starting Vision+Symbol gameplay for seed $seed..."
     echo ""
-    echo "======================================================================="
-    echo "Running: Vision+Symbol - Seed $seed"
-    echo "======================================================================="
 
     if [ "$PROVIDER" == "openrouter" ]; then
         python advance_game_runner.py \
@@ -222,15 +241,16 @@ run_vision_symbol() {
           --output_dir "./comparison_results/vision_symbol_seed${seed}/"
     fi
 
-    # Mark as complete only if successful
-    mark_complete "vision_symbol" $seed
+    # Mark as complete
+    mark_complete "vision_symbol" "$seed"
 
     # Show result
-    result=$(tail -1 "./comparison_results/vision_symbol_seed${seed}/${GAME}_"*/Results/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    local result=$(tail -1 "./comparison_results/vision_symbol_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    echo ""
     echo "✅ Vision+Symbol Seed $seed complete - Final Score: $result"
 }
 
-# Main loop: Process each seed completely (both pipelines) before moving to next
+# Main loop: Process each seed completely before moving to next
 for seed in "${SEEDS[@]}"; do
     echo ""
     echo "======================================================================="
@@ -238,36 +258,36 @@ for seed in "${SEEDS[@]}"; do
     echo "======================================================================="
 
     # Run Vision-Only for this seed
-    run_vision_only $seed
+    run_vision_only "$seed"
 
     # Run Vision+Symbol for this seed
-    run_vision_symbol $seed
+    run_vision_symbol "$seed"
 
     echo ""
-    echo "✅ Seed $seed COMPLETE (both pipelines finished)"
+    echo "✅✅ SEED $seed COMPLETE (both pipelines finished) ✅✅"
     echo ""
 done
 
+# Final summary
 echo ""
 echo "======================================================================="
 echo "ALL SEEDS COMPLETE!"
 echo "======================================================================="
 echo ""
 
-# Show summary
 echo "RESULTS SUMMARY"
 echo "======================================================================="
 echo ""
 echo "Vision-Only Scores:"
 for seed in "${SEEDS[@]}"; do
-    result=$(tail -1 "./comparison_results/vision_only_seed${seed}/${GAME}_"*/Results/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    result=$(tail -1 "./comparison_results/vision_only_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
     echo "  Seed $seed: $result"
 done
 
 echo ""
 echo "Vision+Symbol Scores:"
 for seed in "${SEEDS[@]}"; do
-    result=$(tail -1 "./comparison_results/vision_symbol_seed${seed}/${GAME}_"*/Results/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+    result=$(tail -1 "./comparison_results/vision_symbol_seed${seed}/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
     echo "  Seed $seed: $result"
 done
 

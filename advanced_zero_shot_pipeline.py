@@ -169,7 +169,15 @@ This ensures your detections are grounded in both visual evidence and game knowl
 
         prompt = f"""You are an expert game frame analyzer for the game {game_name}.{game_specific_info}
 
+IMPORTANT: The image you are analyzing is exactly {self.scaled_width}x{self.scaled_height} pixels (width x height).
+
 Your task is to detect ALL visible objects in the image with high precision. Detect all distinct, visible objects (like players, enemies, projectiles, items, scores). For each object, provide its label, a tight bounding box [x1, y1, x2, y2], and a confidence score.
+
+CRITICAL: All coordinates MUST be in pixel values for a {self.scaled_width}x{self.scaled_height} image:
+- x coordinates range from 0 to {self.scaled_width}
+- y coordinates range from 0 to {self.scaled_height}
+- Do NOT use normalized coordinates (0-1 range)
+- Provide exact pixel positions
 
 Return ONLY valid JSON in the following format:
 {{
@@ -313,7 +321,7 @@ Return ONLY valid JSON in the following format:
             if coords:
                 # Determine if coordinates are normalized (0-1) or pixel coordinates
                 are_normalized = all(c <= 1.0 for c in coords)
-                
+
                 if are_normalized:
                     # Convert normalized coordinates to pixel coordinates (1280x720)
                     center_x = int((coords[0] + coords[2]) / 2 * self.scaled_width)

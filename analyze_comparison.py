@@ -15,24 +15,33 @@ def load_results(base_dir, pattern):
     results = []
     base_path = Path(base_dir)
 
-    for csv_path in base_path.glob(f'{pattern}/*/Results/actions_rewards.csv'):
-        try:
-            df = pd.read_csv(csv_path)
-            final_score = df['cumulative_reward'].iloc[-1]
-            frames = len(df)
+    # Try both possible locations: direct and in Results subdirectory
+    search_patterns = [
+        f'{pattern}/*/actions_rewards.csv',  # Direct location
+        f'{pattern}/*/Results/actions_rewards.csv'  # Results subdirectory
+    ]
 
-            # Extract seed from path
-            seed_str = str(csv_path).split('seed')[1].split('/')[0] if 'seed' in str(csv_path) else 'unknown'
+    for search_pattern in search_patterns:
+        for csv_path in base_path.glob(search_pattern):
+            try:
+                df = pd.read_csv(csv_path)
+                final_score = df['cumulative_reward'].iloc[-1]
+                frames = len(df)
 
-            results.append({
-                'seed': seed_str,
-                'final_score': final_score,
-                'frames': frames,
-                'mean_reward': final_score / frames,
-                'path': str(csv_path.parent.parent)
-            })
-        except Exception as e:
-            print(f"Warning: Could not load {csv_path}: {e}")
+                # Extract seed from path
+                seed_str = str(csv_path).split('seed')[1].split('/')[0] if 'seed' in str(csv_path) else 'unknown'
+
+                # Avoid duplicates (in case both locations exist)
+                if not any(r['seed'] == seed_str and r['path'] in str(csv_path) for r in results):
+                    results.append({
+                        'seed': seed_str,
+                        'final_score': final_score,
+                        'frames': frames,
+                        'mean_reward': final_score / frames,
+                        'path': str(csv_path.parent)
+                    })
+            except Exception as e:
+                print(f"Warning: Could not load {csv_path}: {e}")
 
     return results
 
@@ -158,10 +167,11 @@ def save_summary(vision_only, vision_symbol, output_file):
 
 def main():
     import argparse
+    import glob
 
     parser = argparse.ArgumentParser(description='Analyze gameplay comparison results')
-    parser.add_argument('--results_dir', type=str, default='./comparison_results',
-                       help='Directory containing results')
+    parser.add_argument('--results_dir', type=str, default=None,
+                       help='Directory containing results (auto-detects if not specified)')
     parser.add_argument('--output', type=str, default='comparison_summary.json',
                        help='Output JSON file')
 
@@ -170,6 +180,19 @@ def main():
     print("="*70)
     print("GAMEPLAY COMPARISON ANALYSIS")
     print("="*70)
+
+    # Auto-detect results directory if not specified
+    if args.results_dir is None:
+        # Look for directories like pong_openrouter_results/ or comparison_results/
+        possible_dirs = glob.glob('./comparison_results/*_*_results')
+        if possible_dirs:
+            args.results_dir = possible_dirs[0]
+            print(f"\n📁 Auto-detected results directory: {args.results_dir}")
+        else:
+            args.results_dir = './comparison_results'
+            print(f"\n📁 Using default directory: {args.results_dir}")
+
+    print()
 
     # Load results
     vision_only = load_results(args.results_dir, 'vision_only_*')
