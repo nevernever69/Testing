@@ -86,6 +86,11 @@ class DirectFrameAdapter(PipelineAdapter):
             except Exception as e:
                 print(f"Warning: Failed to initialize Anthropic client: {e}")
                 self.client = None
+        elif provider == 'openrouter':
+            # OpenRouter uses requests library (no special client needed)
+            self.client = None
+            if not api_key:
+                raise ValueError("OpenRouter requires api_key parameter")
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -122,6 +127,8 @@ class DirectFrameAdapter(PipelineAdapter):
                 response = self._call_openai(img_base64, prompt)
             elif self.provider == 'anthropic':
                 response = self._call_anthropic(img_base64, prompt)
+            elif self.provider == 'openrouter':
+                response = self._call_openrouter(img_base64, prompt)
             else:
                 response = "Unsupported provider"
 
@@ -231,6 +238,51 @@ class DirectFrameAdapter(PipelineAdapter):
         except Exception as e:
             return f"ERROR: Anthropic call failed: {str(e)}"
 
+    def _call_openrouter(self, img_base64: str, prompt: str) -> str:
+        """Call OpenRouter API."""
+        if not self.api_key:
+            return "ERROR: OpenRouter API key not provided"
+
+        try:
+            import requests
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+
+            payload = {
+                "model": self.model_id or "anthropic/claude-sonnet-4",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_base64}"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }],
+                "temperature": 0.0,
+                "max_tokens": 16000  # Maximum output tokens for most models
+            }
+
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=payload
+            )
+            response.raise_for_status()
+            result = response.json()
+            return result['choices'][0]['message']['content']
+        except Exception as e:
+            return f"ERROR: OpenRouter call failed: {str(e)}"
+
 
 class AdvancedGameAdapter(PipelineAdapter):
     """
@@ -275,6 +327,11 @@ class AdvancedGameAdapter(PipelineAdapter):
             except Exception as e:
                 print(f"Warning: Failed to initialize Bedrock client: {e}")
                 self.client = None
+        elif provider == 'openrouter':
+            # OpenRouter uses requests library (no special client needed)
+            self.client = None
+            if not openrouter_api_key:
+                raise ValueError("OpenRouter requires openrouter_api_key parameter")
         else:
             self.client = None
 
@@ -464,48 +521,15 @@ class AdvancedGameAdapter(PipelineAdapter):
 
         symbolic_context = "\n".join(context_parts)
 
-        # Task-specific reasoning instructions
-        task_instructions = {
-            "visual": """Focus on IDENTIFYING and DESCRIBING each object:
-- First verify the detections match what you see in the frame visually
-- What type of object is it? (paddle, ball, score, etc.)
-- What are its visual characteristics?
-- Describe WHERE each object is located in the frame using detailed qualitative descriptions:
-  * Use combinations like: "upper left", "lower right", "middle right", "slightly below center"
-  * Be precise: "just below the middle", "near the top-left corner", "in the upper-right portion"
-  * Avoid simple "top/bottom/left/right" - be more nuanced
-- Do NOT just repeat coordinates - translate them into natural spatial language
-- Be specific about what you see in the frame.""",
-
-            "spatial": """Focus on SPATIAL RELATIONSHIPS between the DETECTED GAME OBJECTS:
-- First verify the detected objects match what you see in the frame visually
-- Use the provided coordinates AND visual observation to describe RELATIVE POSITIONS
-- For EACH PAIR of game objects (paddles, ball, enemies), describe:
-  * Horizontal relationship: "far to the left of", "slightly left of", "directly left of", "to the right of"
-  * Vertical relationship: "well above", "just above", "at same height as", "below"
-  * Distance/proximity: "very close to", "moderately separated from", "far apart from"
-- Compare ALL game object pairs systematically (ball vs paddle, paddle vs paddle, etc.)
-- Express relationships in natural, nuanced language
-- Stay focused on RELATIONSHIPS between objects (not describing individual object appearance)
-- Be precise with directional and distance descriptions.""",
-
-            "strategy": """Focus on GAMEPLAY STRATEGY:
-- Based on object positions, what should the player do next?
-- Which direction should paddles/ships move?
-- Should the player shoot, move up, move down, or wait?
-- Explain WHY this is the optimal move based on coordinates.""",
-
-            "identification": """Focus on GAME IDENTIFICATION:
-- Based on the detected objects and layout, what game is this?
-- What specific features identify this game?
-- State the game name clearly and justify your answer."""
-        }
-
-        instruction = task_instructions.get(task_type, "Answer the question based on the symbolic information.")
+        # Note: Detailed task instructions are now in base prompts (TASK_PROMPTS)
+        # Only symbolic-specific guidance is added here for Vision+Symbol
+        instruction = "When using the coordinate data, translate numerical positions into natural spatial language rather than just repeating numbers."
 
         reasoning_prompt = f"""You have detected objects in a game frame with precise coordinates:
 
 {symbolic_context}
+
+IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions.
 
 TASK: {prompt}
 
@@ -527,7 +551,11 @@ Answer concisely (under 100 words) using the coordinate data to support your ans
                 message_content = []
 
                 # Add frame image if available
-                if frame is not None:
+                # NOTE: Currently sends BOTH image + coordinates to VLM
+                # For pure symbolic reasoning, set VISION_SYMBOL_INCLUDE_IMAGE=False
+                include_image = os.environ.get('VISION_SYMBOL_INCLUDE_IMAGE', 'true').lower() == 'true'
+
+                if frame is not None and include_image:
                     import base64
                     from io import BytesIO
                     from PIL import Image
@@ -558,6 +586,58 @@ Answer concisely (under 100 words) using the coordinate data to support your ans
                     max_tokens=500
                 )
                 return response['choices'][0]['message']['content']
+            elif self.provider == 'openrouter':
+                print(f"  → Step 3: Reasoning with VLM via OpenRouter (task: {task_type}) using {len(symbolic_state.get('objects', []))} detected objects...")
+                import base64
+                import requests
+                from io import BytesIO
+                from PIL import Image
+
+                # Prepare message content
+                content = []
+
+                # Add image if available
+                include_image = os.environ.get('VISION_SYMBOL_INCLUDE_IMAGE', 'true').lower() == 'true'
+                if frame is not None and include_image:
+                    pil_img = Image.fromarray(frame)
+                    buffered = BytesIO()
+                    pil_img.save(buffered, format="PNG")
+                    img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{img_base64}"
+                        }
+                    })
+
+                # Add text prompt with coordinates
+                content.append({
+                    "type": "text",
+                    "text": reasoning_prompt
+                })
+
+                # Make OpenRouter API call
+                headers = {
+                    "Authorization": f"Bearer {self.openrouter_api_key}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "model": self.model_id or "anthropic/claude-sonnet-4",
+                    "messages": [{"role": "user", "content": content}],
+                    "temperature": 0.0,
+                    "max_tokens": 16000  # Maximum output tokens for most models
+                }
+
+                response = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                result = response.json()
+                return result['choices'][0]['message']['content']
             else:
                 # Fallback: just return symbolic info
                 return "Based on symbolic detection: " + ", ".join([p.replace("- ", "") for p in context_parts])

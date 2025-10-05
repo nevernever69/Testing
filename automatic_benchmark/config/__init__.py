@@ -45,7 +45,16 @@ TASK_PROMPTS = {
 2. COUNTS: For each object type, state how many you see
 3. PROPERTIES: Describe key visual properties (colors, sizes, states)
 
-Format your answer clearly addressing all three parts.""",
+Format your answer clearly addressing all three parts.
+
+INSTRUCTIONS:
+- Identify what type of object each is (paddle, ball, blocks, score, etc.)
+- Describe visual characteristics (colors, sizes, shapes, states)
+- Describe WHERE each object is located using detailed qualitative descriptions:
+  * Use combinations like: "upper left", "lower right", "middle right", "slightly below center"
+  * Be precise: "just below the middle", "near the top-left corner", "in the upper-right portion"
+  * Avoid simple "top/bottom/left/right" - be more nuanced
+- Be specific about what you see in the frame""",
 
     'spatial': """Describe the spatial layout of this game frame:
 1. ABSOLUTE POSITIONS: Where is each object located? (top/middle/bottom, left/center/right)
@@ -53,16 +62,39 @@ Format your answer clearly addressing all three parts.""",
 3. DISTANCES: Which objects are close together? Which are far apart?
 4. ALIGNMENT: Are any objects vertically or horizontally aligned?
 
-Be specific and address all four aspects.""",
+Be specific and address all four aspects.
+
+INSTRUCTIONS:
+- For EACH PAIR of game objects (paddles, ball, enemies, blocks), describe:
+  * Horizontal relationship: "far to the left of", "slightly left of", "directly left of", "to the right of"
+  * Vertical relationship: "well above", "just above", "at same height as", "below"
+  * Distance/proximity: "very close to", "moderately separated from", "far apart from"
+- Compare ALL game object pairs systematically (ball vs paddle, paddle vs paddle, etc.)
+- Express relationships in natural, nuanced language
+- Stay focused on RELATIONSHIPS between objects (not individual object appearance)
+- Be precise with directional and distance descriptions""",
 
     'strategy': """Analyze the game state and recommend an action:
 1. SITUATION: What is the current game situation? Any threats or opportunities?
 2. ACTION: What specific action should the player take next?
 3. JUSTIFICATION: Why is this action optimal? What are you trying to achieve?
 
-Provide a clear answer for each part.""",
+Provide a clear answer for each part.
 
-    'identification': "Identify the game name. Be specific."
+INSTRUCTIONS:
+- Based on object positions, what should the player do next?
+- Which direction should paddles/ships move?
+- Should the player shoot, move up, move down, or wait?
+- Explain WHY this is the optimal move based on the game state
+- Provide specific, actionable advice tied to the current situation""",
+
+    'identification': """Identify the game name. Be specific.
+
+INSTRUCTIONS:
+- Based on the objects and layout, what game is this?
+- What specific features identify this game?
+- State the game name clearly in the first sentence
+- Justify your answer with observable game elements"""
 }
 
 # Object Category Synonyms (for rule-based scoring)

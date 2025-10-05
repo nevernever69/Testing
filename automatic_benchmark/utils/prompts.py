@@ -168,7 +168,8 @@ The VLM was asked to provide THREE parts:
 **What to IGNORE (not issues, not strengths):**
 - Spatial descriptions ("above", "below") - different task
 - UI elements, score displays, lives counters - irrelevant
-- Coordinates or measurements - irrelevant
+- **Coordinates or measurements ("at x=500", "200 pixels wide")** - ACCEPTABLE, never penalize
+- **Quantitative data** - Vision+Symbol has coordinates, using them is CORRECT
 - Response length or verbosity
 
 {game_specific_visual}
@@ -218,11 +219,14 @@ The VLM was asked to provide FOUR parts:
 **IMPORTANT - Vision+Symbol Mode:**
 - If VLM provides coordinates/measurements, they have symbolic data access
 - Focus on whether relationships are CORRECT, not precision
+- **NEVER penalize for mentioning pixel distances or coordinates** - this is CORRECT usage
 
 **What to IGNORE (not issues, not strengths):**
 - UI elements unless they ONLY described UI
 - Colors/appearance - different task
 - Response length or verbosity
+- **Coordinates/measurements ("separated by 200 pixels")** - ACCEPTABLE, never an issue
+- **Quantitative spatial data** - Vision+Symbol has coordinates, using them is CORRECT
 
 {game_specific_spatial}
 """
@@ -273,6 +277,8 @@ The VLM was asked to provide THREE parts:
 - UI elements, score displays - irrelevant
 - Optional elements (shields, future actions) - bonus not required
 - Response length or verbosity
+- **Coordinates/measurements ("200 pixels", "at x=500")** - NEVER penalize for precision
+- **Quantitative data** - Vision+Symbol pipeline has coordinates, using them is CORRECT
 
 {game_specific_strategy}
 """
@@ -314,6 +320,13 @@ Both Vision-Only and Vision+Symbol have access to the same visual information to
 - Score LOW only for: wrong information, hallucinations, missing major elements
 - Score HIGH when: correct objects/relationships/actions identified, regardless of precision level
 
+**CRITICAL: NEVER PENALIZE COORDINATES OR MEASUREMENTS**
+- If response mentions "200 pixels", "at x=500", "distance of 300", this is CORRECT
+- Vision+Symbol pipeline HAS coordinate data - using it is GOOD, not an issue
+- DO NOT list coordinate usage in "identified_issues"
+- DO NOT deduct points for quantitative precision
+- Only judge whether the CONTENT is factually correct
+
 **CRITICAL - For Visual Task:**
 - If VLM includes coordinates in visual task, DO NOT list as an issue
 - DO NOT say "Included coordinate data which wasn't requested"
@@ -333,10 +346,12 @@ Both Vision-Only and Vision+Symbol have access to the same visual information to
 4. Calculate the final score by summing all points (strengths + penalties)
 
 **CRITICAL RULES:**
-- If you penalize for wrong count, DO NOT give points for count accuracy
-- If you penalize for missing objects, DO NOT give full points for object identification
+- Use PARTIAL CREDIT for count accuracy: if 2/3 counts correct, give ~0.20 points (not 0)
+- Use PENALTIES only for critical errors: hallucinations, missing core objects, completely wrong counts
+- DO NOT double-penalize: either give partial credit OR apply penalty, not both
+- For minor count errors (off by 1): give partial credit ~0.20, no penalty
+- For major count errors (off by >50%): give low partial credit ~0.10 AND small penalty
 - Be consistent: strengths and penalties should not contradict each other
-- Adjust strength points DOWN when there are errors in that category
 
 Return ONLY a JSON object with this exact format:
 {{

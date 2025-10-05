@@ -452,7 +452,9 @@ def main():
     parser.add_argument('--game', type=str, default=None,
                        help='Filter to only run on specific game (e.g., "pong", "breakout")')
     parser.add_argument('--use_llm_judge', action='store_true',
-                       help='Enable LLM-as-judge scoring')
+                       help='Enable LLM-as-judge scoring (selective: borderline scores + 10%% sampling)')
+    parser.add_argument('--force_llm_judge', action='store_true',
+                       help='Force LLM judge on EVERY evaluation (expensive but thorough)')
     parser.add_argument('--llm_judge_only', action='store_true',
                        help='Use ONLY LLM judge for scoring (disables rule-based and semantic scoring)')
     parser.add_argument('--llm_judge_provider', type=str, default=None,
@@ -471,11 +473,12 @@ def main():
 
     # Initialize evaluator
     evaluator = AutomaticEvaluator(
-        use_semantic=True,
-        use_llm_judge=args.use_llm_judge or args.llm_judge_only,
-        llm_provider=args.llm_judge_provider if (args.use_llm_judge or args.llm_judge_only) else None,
+        use_semantic=False,  # Disabled: semantic similarity dilutes rule-based + LLM judge agreement
+        use_llm_judge=args.use_llm_judge or args.force_llm_judge or args.llm_judge_only,
+        llm_provider=args.llm_judge_provider if (args.use_llm_judge or args.force_llm_judge or args.llm_judge_only) else None,
         llm_model=args.model,
         aws_region=args.aws_region,
+        force_llm_judge=args.force_llm_judge,
         llm_judge_only=args.llm_judge_only
     )
 

@@ -204,7 +204,7 @@ Return ONLY valid JSON in the following format:
             }
         ]
         
-        response = self._make_api_call(messages, max_tokens=4096, call_id="detection")
+        response = self._make_api_call(messages, max_tokens=16000, call_id="detection")
         
         if not response:
             return {"error": "api_error"}
@@ -466,7 +466,7 @@ Return ONLY valid JSON in the following format:
             }
         ]
 
-        response = self._make_api_call(messages, max_tokens=1000, call_id="action_decision")
+        response = self._make_api_call(messages, max_tokens=16000, call_id="action_decision")
         if not response:
             return {"reasoning": "Failed to get action from API", "action": 0} # Default to NOOP
 

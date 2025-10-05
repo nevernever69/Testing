@@ -617,7 +617,7 @@ Return ONLY JSON:
                 }]
 
             # Make API call
-            raw_response = self._make_api_call(messages, max_tokens=1000)
+            raw_response = self._make_api_call(messages, max_tokens=16000)
 
             if not raw_response:
                 return 0, "Failed to get response from API", prompt
