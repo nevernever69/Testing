@@ -152,10 +152,8 @@ class AdvancedSymbolicDetector:
 
 Before detecting objects, follow these steps:
 1. First, visually identify what game this is based on the gameplay elements and visual style
-2. Based on your knowledge of this game, recall what objects typically exist (e.g., paddles, balls, bricks, enemies)
-3. Determine how many of each object type should reasonably be present in a typical frame
+2. Based on your knowledge of this game, recall what objects typically exist
 4. Now, carefully verify visually which of those expected objects are actually present in THIS specific frame
-5. Only report objects that you can clearly see AND that match the expected object types for this game
 
 This ensures your detections are grounded in both visual evidence and game knowledge."""
 
@@ -171,13 +169,7 @@ This ensures your detections are grounded in both visual evidence and game knowl
 
 IMPORTANT: The image you are analyzing is exactly {self.scaled_width}x{self.scaled_height} pixels (width x height).
 
-Your task is to detect ALL visible objects in the image with high precision. Detect all distinct, visible objects (like players, enemies, projectiles, items, scores). For each object, provide its label, a tight bounding box [x1, y1, x2, y2], and a confidence score.
-
-CRITICAL: All coordinates MUST be in pixel values for a {self.scaled_width}x{self.scaled_height} image:
-- x coordinates range from 0 to {self.scaled_width}
-- y coordinates range from 0 to {self.scaled_height}
-- Do NOT use normalized coordinates (0-1 range)
-- Provide exact pixel positions
+Your task is to detect ALL visible objects in the image with high precision. For each object, provide its label, a tight bounding box [x1, y1, x2, y2], and a confidence score.
 
 Return ONLY valid JSON in the following format:
 {{

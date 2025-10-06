@@ -85,20 +85,34 @@ class AdvanceGameRunner:
         if OCATARI_AVAILABLE:
             try:
                 # Map ALE game names to OCatari names
+                # OCatari supported games: ~55 games including Pong, Breakout, SpaceInvaders,
+                # Assault, Tennis, Pacman, MsPacman, but NOT Frogger
                 ocatari_game_map = {
                     'ALE/Pong-v5': 'Pong',
                     'ALE/Breakout-v5': 'Breakout',
                     'ALE/SpaceInvaders-v5': 'SpaceInvaders',
+                    'ALE/Assault-v5': 'Assault',
+                    'ALE/Tennis-v5': 'Tennis',
+                    'ALE/Pacman-v5': 'Pacman',
+                    'ALE/MsPacman-v5': 'MsPacman',
+                    'ALE/Frogger-v5': None,  # NOT SUPPORTED by OCatari
                 }
-                ocatari_game_name = ocatari_game_map.get(env_name, game_type.title())
-                self.ocatari_env = OCAtariGroundTruth(ocatari_game_name, render_mode='rgb_array')
-                if seed is not None:
-                    self.ocatari_env.reset(seed=seed)
+                ocatari_game_name = ocatari_game_map.get(env_name)
+
+                # Skip OCatari for unsupported games
+                if ocatari_game_name is None:
+                    print(f"ℹ️  OCatari ground truth not available for {env_name} (unsupported game)")
+                    self.ocatari_env = None
                 else:
-                    self.ocatari_env.reset()
-                print(f"✓ OCatari initialized for {ocatari_game_name}")
+                    self.ocatari_env = OCAtariGroundTruth(ocatari_game_name, render_mode='rgb_array')
+                    if seed is not None:
+                        self.ocatari_env.reset(seed=seed)
+                    else:
+                        self.ocatari_env.reset()
+                    print(f"✓ OCatari ground truth enabled for {ocatari_game_name}")
             except Exception as e:
-                print(f"Warning: Failed to initialize OCatari: {e}")
+                print(f"⚠️  Failed to initialize OCatari: {e}")
+                print(f"   Continuing without ground truth extraction...")
                 self.ocatari_env = None
 
         if self.provider != 'rand' and model_id is None:

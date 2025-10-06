@@ -309,8 +309,6 @@ Analyze the current game frame image and choose the best action based on what yo
         # Add game-specific strategy instructions
         if self.game_type == "tennis":
             strategy_section = """
-As an expert Tennis player controlling the RED PLAYER, analyze the visual scene and choose the optimal action.
-
 Think step by step:
 1. Observe the current state of the game
 2. Predict the trajectory or movement patterns
@@ -339,8 +337,6 @@ Return ONLY JSON:
 """
         elif self.game_type == "breakout":
             strategy_section = """
-As an expert Breakout player controlling the ORANGE PADDLE at the bottom, analyze the visual scene and choose the optimal action.
-
 Think step by step:
 1. Observe the current state of the game
 2. Predict the trajectory or movement patterns
@@ -355,8 +351,6 @@ Return ONLY JSON:
 """
         else:
             strategy_section = """
-As an expert player, analyze the visual scene and choose the optimal action.
-
 Think step by step:
 1. Observe the current state of the game
 2. Predict the trajectory or movement patterns
