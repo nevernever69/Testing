@@ -140,13 +140,22 @@ run_vision_only() {
     echo "======================================================================="
 
     local output_dir="$OUTPUT_BASE/vision_only_seed${seed}"
+    local results_csv="$output_dir/${GAME}_"*"/actions_rewards.csv"
 
-    if is_complete "vision_only" "$seed"; then
+    # Check if truly complete (results file exists and is not empty)
+    if is_complete "vision_only" "$seed" && [ -f $results_csv ] 2>/dev/null; then
         echo "⏭️  Already complete (skipping)"
-        local result=$(tail -1 "$output_dir/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        local result=$(tail -1 $results_csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
         echo "   Final Score: $result"
         return 0
     fi
+
+    # Remove incomplete marker if exists
+    rm -f "$STATE_DIR/vision_only_seed${seed}.done"
+
+    # Remove incomplete state files (direct_frame_runner doesn't support resume)
+    # This allows it to restart instead of skipping
+    find "$output_dir" -name "*_state.pkl" -delete 2>/dev/null || true
 
     echo "Starting Vision-Only gameplay for seed $seed..."
     echo ""
@@ -173,13 +182,17 @@ run_vision_only() {
           --output_dir "$output_dir/"
     fi
 
-    # Mark as complete
-    mark_complete "vision_only" "$seed"
-
-    # Show result
-    local result=$(tail -1 "$output_dir/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
-    echo ""
-    echo "✅ Vision-Only Seed $seed complete - Final Score: $result"
+    # Check if run actually completed (results file exists)
+    if [ -f $results_csv ] 2>/dev/null; then
+        mark_complete "vision_only" "$seed"
+        local result=$(tail -1 $results_csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        echo ""
+        echo "✅ Vision-Only Seed $seed complete - Final Score: $result"
+    else
+        echo ""
+        echo "⚠️  Vision-Only Seed $seed did not complete (no results file found)"
+        return 1
+    fi
 }
 
 # Function to run Vision+Symbol
@@ -192,13 +205,18 @@ run_vision_symbol() {
     echo "======================================================================="
 
     local output_dir="$OUTPUT_BASE/vision_symbol_seed${seed}"
+    local results_csv="$output_dir/${GAME}_"*"/actions_rewards.csv"
 
-    if is_complete "vision_symbol" "$seed"; then
+    # Check if truly complete (results file exists and is not empty)
+    if is_complete "vision_symbol" "$seed" && [ -f $results_csv ] 2>/dev/null; then
         echo "⏭️  Already complete (skipping)"
-        local result=$(tail -1 "$output_dir/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        local result=$(tail -1 $results_csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
         echo "   Final Score: $result"
         return 0
     fi
+
+    # Remove incomplete marker if exists
+    rm -f "$STATE_DIR/vision_symbol_seed${seed}.done"
 
     echo "Starting Vision+Symbol gameplay for seed $seed..."
     echo ""
@@ -213,6 +231,8 @@ run_vision_symbol() {
           --game_type "$GAME_TYPE" \
           --num_frames "$NUM_FRAMES" \
           --seed "$seed" \
+          --disable_history \
+          --resume \
           --output_dir "$output_dir/"
     elif [ "$PROVIDER" == "bedrock" ]; then
         python advance_game_runner.py \
@@ -225,16 +245,22 @@ run_vision_symbol() {
           --game_type "$GAME_TYPE" \
           --num_frames "$NUM_FRAMES" \
           --seed "$seed" \
+          --disable_history \
+          --resume \
           --output_dir "$output_dir/"
     fi
 
-    # Mark as complete
-    mark_complete "vision_symbol" "$seed"
-
-    # Show result
-    local result=$(tail -1 "$output_dir/${GAME}_"*/actions_rewards.csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
-    echo ""
-    echo "✅ Vision+Symbol Seed $seed complete - Final Score: $result"
+    # Check if run actually completed (results file exists)
+    if [ -f $results_csv ] 2>/dev/null; then
+        mark_complete "vision_symbol" "$seed"
+        local result=$(tail -1 $results_csv 2>/dev/null | cut -d',' -f2 || echo "N/A")
+        echo ""
+        echo "✅ Vision+Symbol Seed $seed complete - Final Score: $result"
+    else
+        echo ""
+        echo "⚠️  Vision+Symbol Seed $seed did not complete (no results file found)"
+        return 1
+    fi
 }
 
 # Main loop: Process each seed completely before moving to next

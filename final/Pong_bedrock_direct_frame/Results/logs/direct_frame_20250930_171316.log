@@ -1,0 +1,42 @@
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - ================================================== NEW DIRECT FRAME SESSION ==================================================
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Environment: ALE/Pong-v5
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Game Type: pong
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Provider: bedrock
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Output directory: ./experiments/Pong_bedrock_direct_frame
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Number of frames: 600
+2025-09-30 17:13:16,879 - DirectFrame_bedrock_pong - INFO - Skip initial frames: 15
+2025-09-30 17:13:16,880 - DirectFrame_bedrock_pong - INFO - AWS Region: us-east-1
+2025-09-30 17:13:16,880 - DirectFrame_bedrock_pong - INFO - Seed: None (random)
+2025-09-30 17:13:16,880 - DirectFrame_bedrock_pong - INFO - ============================== BASE PROMPT BEING USED ==============================
+2025-09-30 17:13:16,880 - DirectFrame_bedrock_pong - INFO - Full prompt text:
+You are an expert Pong player controlling the GREEN PADDLE.
+
+IMPORTANT: You are controlling the GREEN PADDLE.
+
+Game controls:
+- Action 0: NOOP (do nothing)
+- Action 1: FIRE (serve/start ball - rarely used)
+- Action 2: RIGHT/UP (move paddle up)
+- Action 3: LEFT/DOWN (move paddle down)
+- Action 4: RIGHTFIRE/UPFIRE (move up and fire)
+- Action 5: LEFTFIRE/DOWNFIRE (move down and fire)
+
+
+Analyze the current game frame image and choose the best action based on what you see.
+
+
+As an expert Pong player controlling the GREEN PADDLE, analyze the visual scene and choose the optimal action.
+
+Think step by step:
+1. Observe the current state of the game
+2. Predict the trajectory or movement patterns
+3. Consider your strategic options
+4. Choose the optimal action
+
+Return ONLY JSON:
+{
+    "reasoning": "your expert analysis and decision rationale",
+    "action": integer_action_code
+}
+
+2025-09-30 17:13:16,880 - DirectFrame_bedrock_pong - INFO - ================================================================================

@@ -23,6 +23,14 @@ import tempfile
 from datetime import datetime
 import logging
 
+# Try to import OCatari for ground truth extraction
+try:
+    from ocatari_ground_truth import OCAtariGroundTruth
+    OCATARI_AVAILABLE = True
+except ImportError:
+    OCATARI_AVAILABLE = False
+    print("Warning: OCatari not available. Ground truth coordinates will not be saved.")
+
 
 class AdvanceGameRunner:
     def __init__(self, env_name, provider, game_type, output_dir="./experiments/", prompt=None, model_id=None,
@@ -71,6 +79,27 @@ class AdvanceGameRunner:
         self.symbolic_detector = None
         if openrouter_api_key:
             self.symbolic_detector = self._init_detector(openrouter_api_key, detection_model)
+
+        # Initialize OCatari for ground truth extraction
+        self.ocatari_env = None
+        if OCATARI_AVAILABLE:
+            try:
+                # Map ALE game names to OCatari names
+                ocatari_game_map = {
+                    'ALE/Pong-v5': 'Pong',
+                    'ALE/Breakout-v5': 'Breakout',
+                    'ALE/SpaceInvaders-v5': 'SpaceInvaders',
+                }
+                ocatari_game_name = ocatari_game_map.get(env_name, game_type.title())
+                self.ocatari_env = OCAtariGroundTruth(ocatari_game_name, render_mode='rgb_array')
+                if seed is not None:
+                    self.ocatari_env.reset(seed=seed)
+                else:
+                    self.ocatari_env.reset()
+                print(f"✓ OCatari initialized for {ocatari_game_name}")
+            except Exception as e:
+                print(f"Warning: Failed to initialize OCatari: {e}")
+                self.ocatari_env = None
 
         if self.provider != 'rand' and model_id is None:
             MODELS = {
@@ -462,8 +491,6 @@ Return ONLY JSON:
 
 IMPORTANT: Use the symbolic information when available and reliable, but prioritize visual reasoning if objects are missing or the symbolic data seems incomplete. When symbolic data is present and comprehensive, use it for precise positioning and coordinates. If key objects are not detected symbolically, rely more heavily on visual analysis of the frame to make decisions
 
-As an expert Pong player controlling the GREEN PADDLE, analyze the scene and choose the optimal action.
-
 Think step by step:
 1. Observe the current state of the game
 2. Identify the positions of all key objects
@@ -653,6 +680,26 @@ Return ONLY JSON:
             analysis_dir = os.path.join(self.detections_dir, f"step_{step_number:04d}")
             os.makedirs(analysis_dir, exist_ok=True)
 
+            # Extract OCatari ground truth if available
+            ocatari_ground_truth = None
+            if self.ocatari_env:
+                try:
+                    _, ocatari_objects = self.ocatari_env.get_frame_and_objects()
+                    ocatari_ground_truth = {
+                        'objects': [obj.to_dict() for obj in ocatari_objects],
+                        'spatial_relationships': self.ocatari_env.get_spatial_relationships(),
+                        'frame': step_number
+                    }
+
+                    # Save OCatari ground truth to detection directory
+                    ocatari_file = os.path.join(analysis_dir, "ocatari_ground_truth.json")
+                    with open(ocatari_file, 'w') as f:
+                        json.dump(ocatari_ground_truth, f, indent=2)
+
+                    self.logger.debug(f"Step {step_number}: Saved OCatari ground truth with {len(ocatari_objects)} objects")
+                except Exception as e:
+                    self.logger.warning(f"Step {step_number}: Failed to extract OCatari ground truth: {e}")
+
             # Process frame with symbolic detector
             results = self.symbolic_detector.process_single_frame(frame_path, analysis_dir)
 
@@ -813,6 +860,14 @@ Return ONLY JSON:
             self.action_list.append(action)
             obs, rew, term, trunc, info = self.env.step(action)
             self.env.render()
+
+            # Step OCatari environment in sync
+            if self.ocatari_env:
+                try:
+                    self.ocatari_env.step(action)
+                except Exception as e:
+                    self.logger.warning(f"Step {current_step}: Failed to step OCatari: {e}")
+
             self.save_states(self.rewards, action)
 
             # Log reward changes
@@ -840,6 +895,16 @@ Return ONLY JSON:
                 self.logger.info(f"Step {current_step}: Episode ended (term={term}, trunc={trunc}), resetting environment")
                 obs, info = self.env.reset()
 
+                # Reset OCatari environment in sync
+                if self.ocatari_env:
+                    try:
+                        if self.seed is not None:
+                            self.ocatari_env.reset(seed=self.seed)
+                        else:
+                            self.ocatari_env.reset()
+                    except Exception as e:
+                        self.logger.warning(f"Step {current_step}: Failed to reset OCatari: {e}")
+
             self.steps_taken += 1
             pbar.update(1)
             pbar.set_postfix({"reward": self.rewards})
@@ -848,6 +913,14 @@ Return ONLY JSON:
         self.logger.info(f"Rollout completed. Final reward: {self.rewards}")
 
         self.env.close()
+
+        # Close OCatari environment
+        if self.ocatari_env:
+            try:
+                self.ocatari_env.close()
+                self.logger.info("OCatari environment closed")
+            except Exception as e:
+                self.logger.warning(f"Failed to close OCatari: {e}")
 
 
 def main():

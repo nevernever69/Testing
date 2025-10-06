@@ -325,8 +325,6 @@ Return ONLY JSON:
 """
         elif self.game_type == "pong":
             strategy_section = """
-As an expert Pong player controlling the GREEN PADDLE, analyze the visual scene and choose the optimal action.
-
 Think step by step:
 1. Observe the current state of the game
 2. Predict the trajectory or movement patterns
