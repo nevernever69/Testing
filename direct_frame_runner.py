@@ -193,11 +193,9 @@ class DirectFrameRunner:
         controls = {
             "breakout": {
                 0: "NOOP (do nothing)",
-                1: "FIRE (primary action - often shoot/serve/activate)",
-                2: "RIGHT (move right or right action)",
-                3: "LEFT (move left or left action)",
-                4: "RIGHTFIRE (combination of right + fire)",
-                5: "LEFTFIRE (combination of left + fire)"
+                1: "FIRE (launch ball)",
+                2: "RIGHT (move paddle right)",
+                3: "LEFT (move paddle left)"
             },
             "frogger": {
                 0: "NOOP (do nothing)",
@@ -623,19 +621,20 @@ Return ONLY JSON:
                     action = int(obj.get('action', 0))
 
                     # Validate action is within valid range based on game
+                    # These are the max valid action numbers (inclusive) for each game
                     game_action_ranges = {
-                        'breakout': 5,
-                        'frogger': 4,
-                        'space_invaders': 5,
-                        'pacman': 4,
-                        'mspacman': 4,
-                        'pong': 5,
-                        'tennis': 5,
-                        'assault': 5
+                        'breakout': 3,      # 0-3: NOOP, FIRE, RIGHT, LEFT
+                        'frogger': 4,       # 0-4: NOOP, UP, RIGHT, LEFT, DOWN
+                        'space_invaders': 5, # 0-5: NOOP, FIRE, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE
+                        'pacman': 4,        # 0-4: NOOP, UP, RIGHT, LEFT, DOWN
+                        'mspacman': 8,      # 0-8: NOOP + 8 directional moves
+                        'pong': 5,          # 0-5: NOOP, FIRE, UP, DOWN, UPFIRE, DOWNFIRE
+                        'tennis': 5,        # 0-5: NOOP, FIRE, UP, RIGHT, LEFT, DOWN
+                        'assault': 6        # 0-6: NOOP, FIRE, UP, RIGHT, LEFT, RIGHTFIRE, LEFTFIRE
                     }
                     max_action = game_action_ranges.get(self.game_type, 5)
                     if action < 0 or action > max_action:
-                        self.logger.warning(f"Invalid action {action} for game {self.game_type}, clipping to 0 (NOOP)")
+                        self.logger.warning(f"Invalid action {action} for game {self.game_type} (valid range: 0-{max_action}), clipping to 0 (NOOP)")
                         action = 0  # Default to no-op
 
                     reasoning = obj.get('reasoning', 'No reasoning provided')
