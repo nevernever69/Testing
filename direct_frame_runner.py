@@ -92,7 +92,11 @@ class DirectFrameRunner:
 
         # Build environment and video recorder
         gym.register_envs(ale_py)
-        env = gym.make(env_name, render_mode="rgb_array")
+        # Set frameskip=1 for space_invaders (no frame skip)
+        if self.game_type == "space_invaders":
+            env = gym.make(env_name, render_mode="rgb_array", frameskip=1)
+        else:
+            env = gym.make(env_name, render_mode="rgb_array")
         env = OrderEnforcing(env, disable_render_order_enforcing=True)
 
         # Set seed if provided
@@ -179,7 +183,7 @@ class DirectFrameRunner:
         skip_frames = {
             "breakout": 15,
             "frogger": 120,
-            "space_invaders": 45,
+            "space_invaders": 135,
             "pacman": 40,
             "mspacman": 96,
             "pong": 15,
