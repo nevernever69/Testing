@@ -179,7 +179,7 @@ class DirectFrameRunner:
         skip_frames = {
             "breakout": 15,
             "frogger": 120,
-            "space_invaders": 30,
+            "space_invaders": 45,
             "pacman": 40,
             "mspacman": 96,
             "pong": 15,

@@ -91,9 +91,10 @@ def test_single_frame(
         use_llm_judge=use_llm_judge,
         force_llm_judge=force_llm_judge,
         llm_judge_only=llm_judge_only,
-        llm_provider='bedrock' if use_llm_judge or llm_judge_only else None,
+        llm_provider=provider if (use_llm_judge or llm_judge_only) else None,
         llm_model=model,
-        aws_region=aws_region
+        aws_region=aws_region,
+        llm_api_key=openrouter_key if provider == 'openrouter' else None
     )
 
     # Debug info
@@ -120,7 +121,8 @@ def test_single_frame(
         vision_only = DirectFrameAdapter(
             provider=provider,
             model_id=model,
-            aws_region=aws_region
+            aws_region=aws_region,
+            api_key=openrouter_key if provider == 'openrouter' else None
         )
 
         vision_only_results = {}

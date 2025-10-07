@@ -72,7 +72,7 @@ case "$GAME_TYPE" in
         ;;
     space_invaders|spaceinvaders)
         GAME="SpaceInvaders"
-        ENV_NAME="ALE/SpaceInvaders-v5"
+        ENV_NAME="SpaceInvaders-v4"
         GAME_TYPE="space_invaders"
         ;;
     *)

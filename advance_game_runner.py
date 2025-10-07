@@ -90,7 +90,7 @@ class AdvanceGameRunner:
                 ocatari_game_map = {
                     'ALE/Pong-v5': 'Pong',
                     'ALE/Breakout-v5': 'Breakout',
-                    'ALE/SpaceInvaders-v5': 'SpaceInvaders',
+                    'SpaceInvaders-v4': 'SpaceInvaders',
                     'ALE/Assault-v5': 'Assault',
                     'ALE/Tennis-v5': 'Tennis',
                     'ALE/Pacman-v5': 'Pacman',
@@ -283,7 +283,7 @@ class AdvanceGameRunner:
         skip_frames = {
             "breakout": 15,
             "frogger": 120,
-            "space_invaders": 30,
+            "space_invaders": 45,
             "pacman": 40,
             "mspacman": 96,
             "pong": 15,
