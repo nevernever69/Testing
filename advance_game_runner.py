@@ -141,7 +141,7 @@ class AdvanceGameRunner:
         gym.register_envs(ale_py)
         # Set frameskip=1 for space_invaders (no frame skip)
         if self.game_type == "space_invaders":
-            env = gym.make(env_name, render_mode="rgb_array", frameskip=1)
+            env = gym.make(env_name, render_mode="rgb_array")
         else:
             env = gym.make(env_name, render_mode="rgb_array")
         env = OrderEnforcing(env, disable_render_order_enforcing=True)
@@ -287,7 +287,7 @@ class AdvanceGameRunner:
         skip_frames = {
             "breakout": 15,
             "frogger": 120,
-            "space_invaders": 135,
+            "space_invaders": 45,
             "pacman": 40,
             "mspacman": 96,
             "pong": 15,
