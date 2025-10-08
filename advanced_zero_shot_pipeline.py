@@ -99,6 +99,7 @@ class AdvancedSymbolicDetector:
                         })
                 
                 # Make Bedrock API call
+                print(f"  → [Bedrock-{call_id}] Sending to API with max_tokens={max_tokens}")
                 response = self.bedrock_client.chat_completion(
                     model=self.model_name,
                     messages=bedrock_messages,
@@ -126,7 +127,9 @@ class AdvancedSymbolicDetector:
                 "max_tokens": max_tokens,
                 "temperature": 0
             }
-            
+
+            print(f"  → [OpenRouter-{call_id}] Sending to API with max_tokens={max_tokens}")
+
             try:
                 response = requests.post(self.api_url, headers=headers, json=payload)
                 response.raise_for_status()
@@ -146,6 +149,26 @@ class AdvancedSymbolicDetector:
         """
         print(f"  → Step 2: Object detection with VLM (game: {game_name})...")
         base64_image = self.encode_image_to_base64(image_path)
+
+        # Game-specific max_tokens for detection output
+        # Optimized for games with many objects
+        # Without descriptions, JSON is compact but Space Invaders needs more headroom
+        detection_token_limits = {
+            "pong": 4000,              # ~3-5 objects (paddles, ball, score)
+            "tennis": 4000,            # ~5-8 objects (players, ball, net, score)
+            "breakout": 5000,          # ~10-20 objects (paddle, ball, bricks, score)
+            "assault": 6000,           # ~15-25 objects (player, enemies, projectiles)
+            "frogger": 7000,           # ~15-25 objects (frog, cars, logs, turtles)
+            "pacman": 7000,            # ~20-30 objects (pacman, ghosts, dots, walls)
+            "mspacman": 7000,          # ~20-30 objects (similar to pacman)
+            "ms. pacman": 7000,        # Alternate name
+            "space invaders": 16000,   # ~50-80 objects (invaders, barriers, player, projectiles)
+            "spaceinvaders": 16000,    # Alternate name
+        }
+
+        # Get max_tokens for this game (default 6000 if not specified)
+        max_detection_tokens = detection_token_limits.get(game_name.lower(), 6000)
+        print(f"  → [Detection] Using max_tokens={max_detection_tokens} for {game_name}")
 
         # Add game-specific instructions for better detection
         game_specific_info = """
@@ -178,13 +201,11 @@ Return ONLY valid JSON in the following format:
             "id": "unique_id",
             "label": "object_type_or_description",
             "coordinates": [x1, y1, x2, y2],
-            "confidence": 0.95,
-            "description": "brief description of the object"
+            "confidence": 0.95
         }}
     ],
     "image_info": {{
-        "total_objects": 0,
-        "frame_analysis": "brief description of what you see in the frame"
+        "total_objects": 0
     }}
 }}
 """
@@ -203,9 +224,10 @@ Return ONLY valid JSON in the following format:
                 ]
             }
         ]
-        
-        response = self._make_api_call(messages, max_tokens=16000, call_id="detection")
-        
+
+        print(f"  → [Detection] Calling API with max_tokens={max_detection_tokens}")
+        response = self._make_api_call(messages, max_tokens=max_detection_tokens, call_id="detection")
+
         if not response:
             return {"error": "api_error"}
 
@@ -339,8 +361,7 @@ Return ONLY valid JSON in the following format:
                     "height": height,
                     "area": area,
                     "bbox": coords,
-                    "confidence": obj.get("confidence", 0.0),
-                    "description": obj.get("description", "")
+                    "confidence": obj.get("confidence", 0.0)
                 }
                 state["objects"].append(obj_info)
         
@@ -466,7 +487,11 @@ Return ONLY valid JSON in the following format:
             }
         ]
 
-        response = self._make_api_call(messages, max_tokens=16000, call_id="action_decision")
+        # Increased action decision max_tokens for games with many objects
+        # Space Invaders with 47+ objects needs more tokens for reasoning
+        action_max_tokens = 4000
+        print(f"  → [Action Decision] Calling API with max_tokens={action_max_tokens}")
+        response = self._make_api_call(messages, max_tokens=action_max_tokens, call_id="action_decision")
         if not response:
             return {"reasoning": "Failed to get action from API", "action": 0} # Default to NOOP
 
@@ -667,15 +692,10 @@ Return ONLY valid JSON in the following format:
                 conf_match = re.search(r'Confidence:\s*([\d.]+)', section, re.IGNORECASE)
                 confidence = float(conf_match.group(1)) if conf_match else 0.95
 
-                # Extract description (optional)
-                desc_match = re.search(r'Description:\s*(.+?)(?=\n\*|$)', section, re.IGNORECASE | re.DOTALL)
-                description = desc_match.group(1).strip() if desc_match else ""
-
                 obj = {
                     "label": label,
                     "coordinates": coordinates,
-                    "confidence": confidence,
-                    "description": description
+                    "confidence": confidence
                 }
 
                 # Validate detection

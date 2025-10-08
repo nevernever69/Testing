@@ -420,6 +420,7 @@ Return ONLY JSON:
                         })
 
                 # Make Bedrock API call
+                print(f"  → [Bedrock] Calling API with max_tokens={max_tokens}")
                 response = self.bedrock_client.chat_completion(
                     model=self.model_id,
                     messages=bedrock_messages,
@@ -447,6 +448,8 @@ Return ONLY JSON:
                 "max_tokens": max_tokens,
                 "temperature": 0
             }
+
+            print(f"  → [OpenRouter] Calling API with max_tokens={max_tokens}")
 
             try:
                 response = requests.post(self.api_url, headers=headers, json=payload)
@@ -585,6 +588,10 @@ Return ONLY JSON:
     def get_action_from_direct_frame(self, frame_path, step_number):
         """Get action from direct frame analysis using internal API client"""
         try:
+            # Vision-Only response token limit (same for all games)
+            # Increased significantly for verbose models like Gemini
+            max_response_tokens = 4000
+
             # Encode the frame
             img_b64 = self.encode_image_to_base64(frame_path)
 
@@ -610,8 +617,9 @@ Return ONLY JSON:
                     ]
                 }]
 
-            # Make API call
-            raw_response = self._make_api_call(messages, max_tokens=16000)
+            # Make API call with game-specific token limit
+            print(f"  → [Vision-Only] Sending API call with max_tokens={max_response_tokens}")
+            raw_response = self._make_api_call(messages, max_tokens=max_response_tokens)
 
             if not raw_response:
                 return 0, "Failed to get response from API", prompt
