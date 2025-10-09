@@ -45,6 +45,8 @@ class AdvanceGameRunner:
         self.rewards = 0
         self.steps_taken = 0
         self.num_timesteps = num_frames
+        self.consecutive_api_failures = 0  # Track consecutive API failures
+        self.max_consecutive_failures = 5  # Exit after this many consecutive failures
         self.checkpoint_interval = 50  # Checkpoint every 50 steps
         self.video_frames = []  # Store all frames for cumulative checkpoint videos
         self.skip_initial_frames = self._get_skip_frames()
@@ -718,6 +720,25 @@ Return ONLY JSON:
 
             # Process frame with symbolic detector
             results = self.symbolic_detector.process_single_frame(frame_path, analysis_dir)
+
+            # Check for API errors in results
+            if results.get('error') == 'api_error':
+                self.consecutive_api_failures += 1
+                self.logger.error(f"API error in symbolic detection (consecutive failures: {self.consecutive_api_failures})")
+
+                if self.consecutive_api_failures >= self.max_consecutive_failures:
+                    self.logger.error(f"❌ CRITICAL: {self.consecutive_api_failures} consecutive API failures detected!")
+                    self.logger.error("This likely indicates a critical issue (expired API key, rate limit, insufficient credits)")
+                    print(f"\n❌ CRITICAL ERROR: {self.consecutive_api_failures} consecutive API failures!")
+                    print("Exiting to prevent wasting frames with errors...")
+                    print(f"Progress saved at frame {step_number}")
+                    import sys
+                    sys.exit(1)
+
+                return 0, "API error in symbolic detection", None, None
+
+            # Reset failure counter on successful API call
+            self.consecutive_api_failures = 0
 
             # Extract symbolic state
             symbolic_state = results.get('symbolic_state', {})

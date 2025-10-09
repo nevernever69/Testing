@@ -106,13 +106,35 @@ class AdvancedSymbolicDetector:
                     max_tokens=max_tokens,
                     temperature=0
                 )
-                
+
                 if 'choices' not in response or not response['choices']:
+                    # Save the failed response for debugging
+                    if self.prompts_dir:
+                        error_file = os.path.join(self.prompts_dir, f"bedrock_response_no_choices_{call_id}.json")
+                        with open(error_file, 'w') as f:
+                            json.dump(response, f, indent=2)
+                        print(f"Saved Bedrock response with no choices to: {error_file}")
                     return None
 
                 return response['choices'][0]['message']['content']
             except Exception as e:
                 print(f"Bedrock API request failed: {e}")
+
+                # Save error details
+                error_details = {
+                    "error_message": str(e),
+                    "error_type": type(e).__name__,
+                    "call_id": call_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "max_tokens_requested": max_tokens
+                }
+
+                if self.prompts_dir:
+                    error_file = os.path.join(self.prompts_dir, f"bedrock_exception_{call_id}.json")
+                    with open(error_file, 'w') as f:
+                        json.dump(error_details, f, indent=2)
+                    print(f"Saved Bedrock exception details to: {error_file}")
+
                 return None
         else:
             # Use OpenRouter (default)
@@ -134,13 +156,55 @@ class AdvancedSymbolicDetector:
                 response = requests.post(self.api_url, headers=headers, json=payload)
                 response.raise_for_status()
                 result = response.json()
-                
+
                 if 'choices' not in result or not result['choices']:
+                    print(f"OpenRouter API returned no choices")
+                    # Save the failed response for debugging
+                    if self.prompts_dir:
+                        error_file = os.path.join(self.prompts_dir, f"api_response_no_choices_{call_id}.json")
+                        with open(error_file, 'w') as f:
+                            json.dump(result, f, indent=2)
+                        print(f"Saved API response with no choices to: {error_file}")
                     return None
 
                 return result['choices'][0]['message']['content']
             except requests.exceptions.RequestException as e:
-                print(f"OpenRouter API request failed: {e}")
+                error_msg = str(e)
+                print(f"OpenRouter API request failed: {error_msg}")
+
+                # Try to extract error details from response
+                error_details = {
+                    "error_message": error_msg,
+                    "call_id": call_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "max_tokens_requested": max_tokens
+                }
+
+                try:
+                    if hasattr(e, 'response') and e.response is not None:
+                        error_details["status_code"] = e.response.status_code
+                        try:
+                            error_details["response_body"] = e.response.json()
+                        except:
+                            error_details["response_text"] = e.response.text[:1000]
+                except:
+                    pass
+
+                # Save error details
+                if self.prompts_dir:
+                    error_file = os.path.join(self.prompts_dir, f"api_request_exception_{call_id}.json")
+                    with open(error_file, 'w') as f:
+                        json.dump(error_details, f, indent=2)
+                    print(f"Saved API exception details to: {error_file}")
+
+                # Check for specific error types
+                if "insufficient_quota" in error_msg.lower() or "credits" in error_msg.lower() or "quota" in error_msg.lower():
+                    print("\n❌ CRITICAL ERROR: OpenRouter credits exhausted or quota exceeded!")
+                    print("Please check your OpenRouter account and add credits.")
+                    print("Exiting to prevent wasting frames with errors...")
+                    import sys
+                    sys.exit(1)
+
                 return None
     
     def detect_objects(self, image_path: str, game_name: str) -> Dict:
@@ -156,7 +220,7 @@ class AdvancedSymbolicDetector:
         detection_token_limits = {
             "pong": 4000,              # ~3-5 objects (paddles, ball, score)
             "tennis": 4000,            # ~5-8 objects (players, ball, net, score)
-            "breakout": 5000,          # ~10-20 objects (paddle, ball, bricks, score)
+            "breakout": 8000,          # ~10-20 objects (paddle, ball, bricks, score)
             "assault": 6000,           # ~15-25 objects (player, enemies, projectiles)
             "frogger": 7000,           # ~15-25 objects (frog, cars, logs, turtles)
             "pacman": 7000,            # ~20-30 objects (pacman, ghosts, dots, walls)
@@ -229,6 +293,19 @@ Return ONLY valid JSON in the following format:
         response = self._make_api_call(messages, max_tokens=max_detection_tokens, call_id="detection")
 
         if not response:
+            # Save failed API call info for debugging
+            if self.prompts_dir:
+                error_file = os.path.join(self.prompts_dir, "api_error_detection.json")
+                error_info = {
+                    "error": "api_call_failed",
+                    "step": "detection",
+                    "max_tokens": max_detection_tokens,
+                    "game_name": game_name,
+                    "timestamp": datetime.now().isoformat()
+                }
+                with open(error_file, 'w') as f:
+                    json.dump(error_info, f, indent=2)
+                print(f"Saved API error info to: {error_file}")
             return {"error": "api_error"}
 
         try:
@@ -263,6 +340,15 @@ Return ONLY valid JSON in the following format:
 
             print(f"Error parsing detection response: {e}")
             print(f"Response was: {response[:500]}...")
+
+            # Save failed parsing response for debugging
+            if self.prompts_dir:
+                error_file = os.path.join(self.prompts_dir, "parsing_error_detection.txt")
+                with open(error_file, 'w') as f:
+                    f.write(f"Error: {e}\n\n")
+                    f.write(f"Full API Response:\n{response}\n")
+                print(f"Saved parsing error and full response to: {error_file}")
+
             return {"error": "parsing_error"}
     
     def draw_bounding_boxes(self, image_path: str, detections: Dict, output_path: str) -> None:
@@ -493,6 +579,18 @@ Return ONLY valid JSON in the following format:
         print(f"  → [Action Decision] Calling API with max_tokens={action_max_tokens}")
         response = self._make_api_call(messages, max_tokens=action_max_tokens, call_id="action_decision")
         if not response:
+            # Save failed API call info for debugging
+            if self.prompts_dir:
+                error_file = os.path.join(self.prompts_dir, "api_error_action_decision.json")
+                error_info = {
+                    "error": "api_call_failed",
+                    "step": "action_decision",
+                    "max_tokens": action_max_tokens,
+                    "timestamp": datetime.now().isoformat()
+                }
+                with open(error_file, 'w') as f:
+                    json.dump(error_info, f, indent=2)
+                print(f"Saved API error info to: {error_file}")
             return {"reasoning": "Failed to get action from API", "action": 0} # Default to NOOP
 
         # Save the full response for debugging
@@ -501,7 +599,7 @@ Return ONLY valid JSON in the following format:
         try:
             json_str = self._clean_json_response(response)
             action_result = json.loads(json_str)
-            
+
             # Validate the result
             if "reasoning" not in action_result or "action" not in action_result:
                 return {"reasoning": "Invalid action response format", "action": 0}
@@ -512,6 +610,15 @@ Return ONLY valid JSON in the following format:
         except (json.JSONDecodeError, ValueError) as e:
             print(f"Error parsing action decision: {e}")
             print(f"Response was: {response}")
+
+            # Save failed parsing response for debugging
+            if self.prompts_dir:
+                error_file = os.path.join(self.prompts_dir, "parsing_error_action_decision.txt")
+                with open(error_file, 'w') as f:
+                    f.write(f"Error: {e}\n\n")
+                    f.write(f"Full API Response:\n{response}\n")
+                print(f"Saved parsing error and full response to: {error_file}")
+
             return {"reasoning": "Error parsing action JSON", "action": 0}
     
     def process_single_frame(self, image_path: str, output_folder: str, game_name: str, game_controls: Dict) -> Dict:

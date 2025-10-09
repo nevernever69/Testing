@@ -29,6 +29,8 @@ class DirectFrameRunner:
         self.rewards = 0
         self.steps_taken = 0
         self.num_timesteps = num_frames
+        self.consecutive_api_failures = 0  # Track consecutive API failures
+        self.max_consecutive_failures = 5  # Exit after this many consecutive failures
         self.checkpoint_interval = 50  # Checkpoint every 50 steps
         self.video_frames = []  # Store all frames for cumulative checkpoint videos
         self.skip_initial_frames = self._get_skip_frames()
@@ -457,11 +459,23 @@ Return ONLY JSON:
                 result = response.json()
 
                 if 'choices' not in result or not result['choices']:
+                    self.logger.error(f"OpenRouter API returned no choices")
                     return None
 
                 return result['choices'][0]['message']['content']
             except requests.exceptions.RequestException as e:
-                self.logger.error(f"OpenRouter API request failed: {e}")
+                error_msg = str(e)
+                self.logger.error(f"OpenRouter API request failed: {error_msg}")
+
+                # Check for specific error types
+                if "insufficient_quota" in error_msg.lower() or "credits" in error_msg.lower() or "quota" in error_msg.lower():
+                    self.logger.error("❌ CRITICAL: OpenRouter credits exhausted or quota exceeded!")
+                    self.logger.error("Please check your OpenRouter account and add credits.")
+                    print("\n❌ CRITICAL ERROR: OpenRouter credits exhausted!")
+                    print("Exiting to prevent wasting frames with errors...")
+                    import sys
+                    sys.exit(1)
+
                 return None
 
     def save_states(self, rewards, action):
@@ -622,7 +636,22 @@ Return ONLY JSON:
             raw_response = self._make_api_call(messages, max_tokens=max_response_tokens)
 
             if not raw_response:
+                self.consecutive_api_failures += 1
+                self.logger.error(f"API call failed (consecutive failures: {self.consecutive_api_failures})")
+
+                if self.consecutive_api_failures >= self.max_consecutive_failures:
+                    self.logger.error(f"❌ CRITICAL: {self.consecutive_api_failures} consecutive API failures detected!")
+                    self.logger.error("This likely indicates a critical issue (expired API key, rate limit, insufficient credits)")
+                    print(f"\n❌ CRITICAL ERROR: {self.consecutive_api_failures} consecutive API failures!")
+                    print("Exiting to prevent wasting frames with errors...")
+                    print(f"Progress saved at frame {self.steps_taken}")
+                    import sys
+                    sys.exit(1)
+
                 return 0, "Failed to get response from API", prompt
+
+            # Reset failure counter on successful API call
+            self.consecutive_api_failures = 0
 
             # Parse the JSON response
             match = re.search(r"\{.*\}", raw_response, flags=re.DOTALL)
