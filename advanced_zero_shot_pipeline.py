@@ -231,7 +231,7 @@ class AdvancedSymbolicDetector:
         }
 
         # Get max_tokens for this game (default 6000 if not specified)
-        max_detection_tokens = detection_token_limits.get(game_name.lower(), 6000)
+        max_detection_tokens = detection_token_limits.get(game_name.lower(), 8000)
         print(f"  → [Detection] Using max_tokens={max_detection_tokens} for {game_name}")
 
         # Add game-specific instructions for better detection
@@ -596,20 +596,76 @@ Return ONLY valid JSON in the following format:
         # Save the full response for debugging
         self._last_action_response = response
 
+        # IMPORTANT: Save the raw response BEFORE any parsing for debugging
+        if self.prompts_dir:
+            raw_response_file = os.path.join(self.prompts_dir, "api_raw_response_action_decision.txt")
+            with open(raw_response_file, 'w') as f:
+                f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                f.write("="*80 + "\n")
+                f.write("RAW API RESPONSE:\n")
+                f.write("="*80 + "\n")
+                f.write(response)
+                f.write("\n" + "="*80 + "\n")
+            print(f"  → Saved raw API response to: {raw_response_file}")
+
         try:
             json_str = self._clean_json_response(response)
+
+            # Save the cleaned JSON string as well
+            if self.prompts_dir:
+                cleaned_json_file = os.path.join(self.prompts_dir, "api_cleaned_json_action_decision.txt")
+                with open(cleaned_json_file, 'w') as f:
+                    f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                    f.write("="*80 + "\n")
+                    f.write("CLEANED JSON STRING (before parsing):\n")
+                    f.write("="*80 + "\n")
+                    f.write(json_str)
+                    f.write("\n" + "="*80 + "\n")
+                print(f"  → Saved cleaned JSON to: {cleaned_json_file}")
+
             action_result = json.loads(json_str)
 
-            # Validate the result
-            if "reasoning" not in action_result or "action" not in action_result:
-                return {"reasoning": "Invalid action response format", "action": 0}
+            # Save the parsed result
+            if self.prompts_dir:
+                parsed_result_file = os.path.join(self.prompts_dir, "api_parsed_result_action_decision.json")
+                with open(parsed_result_file, 'w') as f:
+                    json.dump({
+                        "timestamp": datetime.now().isoformat(),
+                        "parsed_result": action_result,
+                        "has_reasoning": "reasoning" in action_result,
+                        "has_action": "action" in action_result,
+                        "keys_present": list(action_result.keys())
+                    }, f, indent=2)
+                print(f"  → Saved parsed result to: {parsed_result_file}")
 
-            print(f"Action decided: {action_result['action']} ({action_result['reasoning']})")
+            # Validate the result with detailed logging
+            if "reasoning" not in action_result:
+                print(f"  ⚠️  WARNING: 'reasoning' key missing from parsed result!")
+                print(f"  → Available keys: {list(action_result.keys())}")
+                if self.prompts_dir:
+                    warning_file = os.path.join(self.prompts_dir, "WARNING_missing_reasoning.txt")
+                    with open(warning_file, 'w') as f:
+                        f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+                        f.write("="*80 + "\n")
+                        f.write("WARNING: 'reasoning' key missing!\n")
+                        f.write("="*80 + "\n")
+                        f.write(f"Available keys: {list(action_result.keys())}\n")
+                        f.write(f"Parsed result: {json.dumps(action_result, indent=2)}\n")
+                        f.write(f"\nRaw response: {response}\n")
+                    print(f"  → Saved warning details to: {warning_file}")
+                return {"reasoning": "Invalid action response format - missing 'reasoning' key", "action": action_result.get('action', 0)}
+
+            if "action" not in action_result:
+                print(f"  ⚠️  WARNING: 'action' key missing from parsed result!")
+                print(f"  → Available keys: {list(action_result.keys())}")
+                return {"reasoning": action_result.get('reasoning', 'Missing action key'), "action": 0}
+
+            print(f"Action decided: {action_result['action']} ({action_result['reasoning'][:100]}...)")
             return action_result
 
         except (json.JSONDecodeError, ValueError) as e:
             print(f"Error parsing action decision: {e}")
-            print(f"Response was: {response}")
+            print(f"Response was: {response[:500]}...")
 
             # Save failed parsing response for debugging
             if self.prompts_dir:
