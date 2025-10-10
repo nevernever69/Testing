@@ -19,6 +19,22 @@ import logging
 import re
 
 
+def convert_numpy_types(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(item) for item in obj]
+    else:
+        return obj
+
+
 class OCAtariSymbolicRunner:
     def __init__(self, game_type, provider, model_name, output_dir="./ocatari_experiments/",
                  openrouter_api_key=None, num_frames=600, aws_region="us-east-1", seed=None):
@@ -212,7 +228,7 @@ Return ONLY JSON:
             }]
 
             # Use detector's _make_api_call method
-            response = self.detector._make_api_call(messages, max_tokens=1000, call_id="action_decision")
+            response = self.detector._make_api_call(messages, max_tokens=3000, call_id="action_decision")
 
             if not response:
                 self.logger.warning("Empty response from VLM")
@@ -310,7 +326,7 @@ Return ONLY JSON:
 
         # Save OCAtari ground truth with original coordinates
         ocatari_data = {
-            'objects': [obj.to_dict() for obj in ocatari_objects],
+            'objects': [convert_numpy_types(obj.to_dict()) for obj in ocatari_objects],
             'frame': step,
             'num_objects': len(ocatari_objects),
             'resolution': '160x210 (OCAtari native)'
@@ -358,7 +374,7 @@ Return ONLY JSON:
 
                 x, y, w, h = self.scale_ocatari_to_vlm(x_ocatari, y_ocatari, w_ocatari, h_ocatari)
 
-                scaled_objects.append({
+                scaled_objects.append(convert_numpy_types({
                     'category': obj_dict.get('category', 'unknown'),
                     'x': x,
                     'y': y,
@@ -368,7 +384,7 @@ Return ONLY JSON:
                     'original_y': y_ocatari,
                     'original_w': w_ocatari,
                     'original_h': h_ocatari
-                })
+                }))
 
             scaled_data = {
                 'objects': scaled_objects,
